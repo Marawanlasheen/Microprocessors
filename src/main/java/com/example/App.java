@@ -25,6 +25,54 @@ import javafx.stage.Stage;
 import java.util.*;
 
 public class App extends Application {
+                private final ObservableList<AddressClashRow> addressClashRows = FXCollections.observableArrayList();
+
+            // Address clash row for table
+            public static class AddressClashRow {
+                public final int cycle; public final String causing; public final String affected; public final String addr;
+                public AddressClashRow(int cycle, String causing, String affected, String addr) {
+                    this.cycle = cycle; this.causing = causing; this.affected = affected; this.addr = addr;
+                }
+            }
+
+            private TableView<AddressClashRow> buildAddressClashTable() {
+                TableView<AddressClashRow> tv = new TableView<>(addressClashRows);
+                TableColumn<AddressClashRow, Number> cCycle = new TableColumn<>("Cycle");
+                cCycle.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().cycle));
+                TableColumn<AddressClashRow, String> cCause = new TableColumn<>("Cause");
+                cCause.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().causing));
+                TableColumn<AddressClashRow, String> cAff = new TableColumn<>("Affected");
+                cAff.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().affected));
+                TableColumn<AddressClashRow, String> cAddr = new TableColumn<>("Address/Register");
+                cAddr.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().addr));
+                tv.getColumns().addAll(cCycle, cCause, cAff, cAddr);
+                tv.setPrefHeight(120);
+                return tv;
+            }
+            // User-provided register initialization
+            private Map<String, Integer> userIntRegInit = new HashMap<>();
+            private Map<String, Integer> userFloatRegInit = new HashMap<>();
+        // User-configurable station/buffer sizes
+        private int userFpAddStations = 3;
+        private int userFpMulStations = 2;
+        private int userIntStations = 2;
+        private int userLoadBuffers = 2;
+        private int userStoreBuffers = 2;
+        private int userBranchStations = 1;
+    // User-configurable cache parameters
+    private int userHitLatency = 1;
+    private int userMissPenalty = 10;
+    private int userBlockSize = 16;
+    private int userCacheSize = 1024;
+
+    // User-configurable instruction latencies
+    private int userAddLatency = 2;
+    private int userSubLatency = 2;
+    private int userMulLatency = 4;
+    private int userDivLatency = 8;
+    private int userLoadLatency = 2;
+    private int userStoreLatency = 2;
+    private int userBranchLatency = 1;
 
     private TomasuloCore core;
     private final InstructionParser parser = new InstructionParser();
@@ -38,7 +86,39 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
+                            TableView<AddressClashRow> addressClashTable = buildAddressClashTable();
+                        // Help menu for cache/memory documentation
+                        MenuBar menuBar = new MenuBar();
+                        Menu helpMenu = new Menu("Help");
+                        MenuItem cacheHelp = new MenuItem("Cache Addressing Info");
+                        helpMenu.getItems().add(cacheHelp);
+                        menuBar.getMenus().add(helpMenu);
+
+                        cacheHelp.setOnAction(e -> showCacheHelpDialog());
+                    // Prompt user for register initialization
+                    showRegisterInitDialog();
+                // Prompt user for station/buffer sizes
+                userFpAddStations = getUserInt("FP Add Reservation Stations", 3);
+                userFpMulStations = getUserInt("FP Mul Reservation Stations", 2);
+                userIntStations = getUserInt("Integer Reservation Stations", 2);
+                userLoadBuffers = getUserInt("Load Buffers", 2);
+                userStoreBuffers = getUserInt("Store Buffers", 2);
+                userBranchStations = getUserInt("Branch Reservation Stations", 1);
+            // Prompt user for instruction latencies
+            userAddLatency = getUserInt("ADD Latency (cycles)", 2);
+            userSubLatency = getUserInt("SUB Latency (cycles)", 2);
+            userMulLatency = getUserInt("MUL Latency (cycles)", 4);
+            userDivLatency = getUserInt("DIV Latency (cycles)", 8);
+            userLoadLatency = getUserInt("LOAD Latency (cycles)", 2);
+            userStoreLatency = getUserInt("STORE Latency (cycles)", 2);
+            userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
         stage.setTitle("Tomasulo Simulator");
+
+        // Prompt user for cache parameters
+        userBlockSize = getUserInt("Cache Block Size (bytes)", 16);
+        userCacheSize = getUserInt("Cache Size (bytes)", 1024);
+        userHitLatency = getUserInt("Cache Hit Latency (cycles)", 1);
+        userMissPenalty = getUserInt("Cache Miss Penalty (cycles)", 10);
 
         // Controls
         Button loadBtn = new Button("Load Program");
@@ -60,19 +140,30 @@ public class App extends Application {
         TableView<InstructionRow> instrTable = buildInstrTable();
         TableView<HazardRow> hazardTable = buildHazardTable();
 
-        VBox left = new VBox(8, new Label("Program"), programArea);
+        // Register tables side by side under program area
+        VBox programBox = new VBox(4, new Label("Program"), programArea);
+        programBox.setPadding(new Insets(8));
+        programBox.setPrefWidth(420);
+
+        HBox regTables = new HBox(8,
+            new VBox(new Label("Int Registers"), intRegTable),
+            new VBox(new Label("Float Registers"), floatRegTable)
+        );
+        regTables.setPadding(new Insets(8, 0, 0, 0));
+
+        VBox left = new VBox(8, programBox, regTables);
         left.setPadding(new Insets(8));
         left.setPrefWidth(420);
 
         VBox right = new VBox(8, new Label("Reservation Stations"), stationTable,
-                new Label("Int Registers"), intRegTable,
-            new Label("Float Registers"), floatRegTable,
             new Label("Instruction Queue"), instrTable,
-            new Label("Hazards"), hazardTable);
+            new Label("Hazards"), hazardTable,
+            new Label("Address Clashes"), addressClashTable);
         right.setPadding(new Insets(8));
 
         BorderPane root = new BorderPane();
-        root.setTop(topBar);
+        VBox topVBox = new VBox(menuBar, topBar);
+        root.setTop(topVBox);
         root.setLeft(left);
         root.setCenter(right);
 
@@ -86,17 +177,36 @@ public class App extends Application {
         run10Btn.setOnAction(e -> { for (int i = 0; i < 10; i++) doStep(); });
         resetBtn.setOnAction(e -> { initCoreWithDefaults(); refreshTables(); });
 
-        stage.setScene(new Scene(root, 1100, 800));
+        stage.setScene(new Scene(root, 1100, 650));
         stage.show();
     }
 
     private void initCoreWithDefaults() {
         // Reasonable defaults; can be made user-editable later
-        LatencyConfig lat = new LatencyConfig(2, 2, 4, 8, 2, 2, 1);
-        CacheConfig cache = new CacheConfig(16, 1024, 1, 10);
-        StationSizeConfig sizes = new StationSizeConfig(3, 2, 2, 2, 2, 1);
+        LatencyConfig lat = new LatencyConfig(
+            userAddLatency,
+            userSubLatency,
+            userMulLatency,
+            userDivLatency,
+            userLoadLatency,
+            userStoreLatency,
+            userBranchLatency
+        );
+        // Use user-provided cache parameters
+        CacheConfig cache = new CacheConfig(userBlockSize, userCacheSize, userHitLatency, userMissPenalty);
+        StationSizeConfig sizes = new StationSizeConfig(
+            userFpAddStations,
+            userFpMulStations,
+            userIntStations,
+            userLoadBuffers,
+            userStoreBuffers,
+            userBranchStations
+        );
         SimulationConfig cfg = new SimulationConfig(lat, cache, sizes, 16, 16);
         core = new TomasuloCore(cfg, 4096);
+        // Apply user register initialization
+        userIntRegInit.forEach((reg, val) -> core.getIntRegisters().init(reg, val));
+        userFloatRegInit.forEach((reg, val) -> core.getFloatRegisters().init(reg, val));
     }
 
     private TableView<StationState> buildStationTable() {
@@ -178,6 +288,15 @@ public class App extends Application {
     }
 
     private void refreshTables() {
+        // Address clashes
+        addressClashRows.clear();
+        if (core instanceof com.example.tomasulo.core.TomasuloCore) {
+            for (HazardRecord hr : ((com.example.tomasulo.core.TomasuloCore)core).getHazardLog()) {
+                if ("ADDRESS_CLASH".equals(hr.getType().name())) {
+                    addressClashRows.add(new AddressClashRow(hr.getCycle(), hr.getCausingStation(), hr.getAffectedStation(), hr.getRegister()));
+                }
+            }
+        }
         CycleSnapshot snap = core.snapshot();
         cycleLabel.setText("Cycle: " + snap.getCycle());
         stationRows.setAll(snap.getStations());
@@ -276,5 +395,77 @@ public class App extends Application {
 
     public static void main(String[] args) {
         launch();
+    }
+
+    // Show dialog explaining cache addressing and memory mapping
+    private void showCacheHelpDialog() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Cache Addressing and Memory Mapping");
+        alert.setHeaderText("How Data Cache Addressing Works");
+        alert.setContentText(
+            "- The data cache is direct-mapped.\n" +
+            "- Memory is byte-addressable (each address points to 1 byte).\n" +
+            "- Each cache block holds 'block size' bytes.\n" +
+            "- The block address for any memory address is: blockAddress = address - (address % blockSize).\n" +
+            "- On a cache access, if the block containing the address is not present, it is fetched from memory (compulsory miss).\n" +
+            "- If the block is present, it is a hit.\n" +
+            "- Loads and stores operate on 4 bytes (a word) at a time.\n" +
+            "- When loading a word (e.g., LW R1, 100(R2)):\n" +
+            "    1. Compute the effective address (e.g., 100 + R2).\n" +
+            "    2. Compute the block address: blockAddress = effectiveAddress - (effectiveAddress % blockSize).\n" +
+            "    3. If the block is in the cache, read the 4 bytes (word) from the block (hit).\n" +
+            "    4. If the block is not in the cache, fetch the block from memory, place it in the cache, then read the 4 bytes (miss).\n" +
+            "- Example: For address 100, block size 16, blockAddress = 100 - (100 % 16) = 96.\n" +
+            "- The cache is sized by user input (total bytes and block size).\n" +
+            "- Write-through policy is used for stores.\n");
+        alert.showAndWait();
+    }
+
+    // Show dialog for user to preload register values
+    private void showRegisterInitDialog() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Register Initialization");
+        dialog.setHeaderText("Preload Integer and Float Registers (format: R0=5, F2=3, ...)");
+        TextArea regArea = new TextArea();
+        regArea.setPromptText("R0=5, R1=10, F0=3, F1=0 ...");
+        regArea.setPrefRowCount(4);
+        dialog.getDialogPane().setContent(regArea);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResultConverter(dialogButton -> dialogButton);
+        Optional<ButtonType> result = dialog.showAndWait();
+        userIntRegInit.clear();
+        userFloatRegInit.clear();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            String[] entries = regArea.getText().split(",");
+            for (String entry : entries) {
+                String trimmed = entry.trim();
+                if (trimmed.isEmpty() || !trimmed.contains("=")) continue;
+                String[] parts = trimmed.split("=");
+                if (parts.length != 2) continue;
+                String reg = parts[0].trim().toUpperCase();
+                try {
+                    int val = Integer.parseInt(parts[1].trim());
+                    if (reg.startsWith("R")) userIntRegInit.put(reg, val);
+                    else if (reg.startsWith("F")) userFloatRegInit.put(reg, val);
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+    // Helper to prompt user for integer input with default
+    private int getUserInt(String prompt, int defaultValue) {
+        TextInputDialog dialog = new TextInputDialog(Integer.toString(defaultValue));
+        dialog.setTitle("Parameter Input");
+        dialog.setHeaderText(prompt);
+        dialog.setContentText(prompt + ":");
+        while (true) {
+            java.util.Optional<String> result = dialog.showAndWait();
+            if (result.isPresent()) {
+                try {
+                    return Integer.parseInt(result.get().trim());
+                } catch (Exception ignored) {}
+            } else {
+                return defaultValue;
+            }
+        }
     }
 }

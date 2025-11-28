@@ -2,7 +2,8 @@ package com.example.tomasulo.model;
 
 public enum Opcode {
     ADD, SUB, MUL, DIV, // floating point assumed same latency categories
-    ADDI, SUBI,
+    ADD_D, SUB_D, MUL_D, DIV_D, // floating point .D variants
+    ADDI, SUBI, DADDI, DSUBI, // integer immediate (32/64-bit)
     LW, LD, L_S, L_D,
     SW, SD, S_S, S_D,
     BEQ, BNE;

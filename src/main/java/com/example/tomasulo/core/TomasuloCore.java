@@ -38,8 +38,14 @@ public class TomasuloCore {
         for (int i = 0; i < config.getStationSizeConfig().getFpMulStations(); i++) {
             stations.add(new ReservationStationEntry("M"+i, ReservationStationType.FP_MUL));
         }
-        for (int i = 0; i < config.getStationSizeConfig().getIntStations(); i++) {
-            stations.add(new ReservationStationEntry("I"+i, ReservationStationType.INT_ALU));
+        // Split integer stations into INT_ADD and INT_SUB for granularity
+        int intAddCount = config.getStationSizeConfig().getIntStations() / 2;
+        int intSubCount = config.getStationSizeConfig().getIntStations() - intAddCount;
+        for (int i = 0; i < intAddCount; i++) {
+            stations.add(new ReservationStationEntry("IA"+i, ReservationStationType.INT_ADD));
+        }
+        for (int i = 0; i < intSubCount; i++) {
+            stations.add(new ReservationStationEntry("IS"+i, ReservationStationType.INT_SUB));
         }
         for (int i = 0; i < config.getStationSizeConfig().getLoadBuffers(); i++) {
             stations.add(new ReservationStationEntry("L"+i, ReservationStationType.LOAD));
@@ -106,10 +112,9 @@ public class TomasuloCore {
 
     private int latencyFor(Opcode opcode) {
         switch (opcode) {
-            case ADD, SUB -> { return config.getLatencyConfig().getAddLatency(); }
-            case MUL -> { return config.getLatencyConfig().getMulLatency(); }
-            case DIV -> { return config.getLatencyConfig().getDivLatency(); }
-            case ADDI, SUBI -> { return config.getLatencyConfig().getAddLatency(); }
+            case ADD, SUB, ADD_D, SUB_D, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
+            case MUL, MUL_D -> { return config.getLatencyConfig().getMulLatency(); }
+            case DIV, DIV_D -> { return config.getLatencyConfig().getDivLatency(); }
             case LW, LD, L_S, L_D -> { return config.getLatencyConfig().getLoadLatency(); }
             case SW, SD, S_S, S_D -> { return config.getLatencyConfig().getStoreLatency(); }
             case BEQ, BNE -> { return config.getLatencyConfig().getBranchLatency(); }
@@ -121,6 +126,8 @@ public class TomasuloCore {
         ReservationStationType type;
         if (inst.getOpcode().isFPAddGroup()) type = ReservationStationType.FP_ADD;
         else if (inst.getOpcode().isFPMulGroup()) type = ReservationStationType.FP_MUL;
+        else if (inst.getOpcode() == com.example.tomasulo.model.Opcode.ADDI || inst.getOpcode() == com.example.tomasulo.model.Opcode.DADDI) type = ReservationStationType.INT_ADD;
+        else if (inst.getOpcode() == com.example.tomasulo.model.Opcode.SUBI || inst.getOpcode() == com.example.tomasulo.model.Opcode.DSUBI) type = ReservationStationType.INT_SUB;
         else if (inst.getOpcode().isInteger()) type = ReservationStationType.INT_ALU;
         else if (inst.getOpcode().isLoad()) type = ReservationStationType.LOAD;
         else if (inst.getOpcode().isStore()) type = ReservationStationType.STORE;
@@ -204,6 +211,17 @@ public class TomasuloCore {
                 if (e == entry) continue;
                 if (dest.equals(e.getSrc1Register()) || dest.equals(e.getSrc2Register())) {
                     hazardLog.add(new HazardRecord(HazardType.WAR, entry.getName(), e.getName(), dest, cycle));
+                }
+            }
+        }
+        // Address clash hazard: two memory ops to the same address (if known)
+        if ((inst.getOpcode().isLoad() || inst.getOpcode().isStore()) && entry.getAddress() != null) {
+            for (ReservationStationEntry e : stations.busyEntries()) {
+                if (e == entry) continue;
+                if ((e.getOpcode() != null && (e.getOpcode().isLoad() || e.getOpcode().isStore())) && e.getAddress() != null) {
+                    if (entry.getAddress().equals(e.getAddress())) {
+                        hazardLog.add(new HazardRecord(HazardType.ADDRESS_CLASH, entry.getName(), e.getName(), String.valueOf(entry.getAddress()), cycle));
+                    }
                 }
             }
         }
@@ -316,12 +334,12 @@ public class TomasuloCore {
         if (e.getVk() != null) vk = Integer.parseInt(e.getVk());
         if (op == null) return 0;
         switch (op) {
-            case ADD -> { return vj + vk; }
+            case ADD, ADD_D, DADDI -> { return vj + vk; }
             case ADDI -> { return vj + (e.getImmediate() != null ? e.getImmediate() : vk); }
-            case SUB -> { return vj - vk; }
+            case SUB, SUB_D, DSUBI -> { return vj - vk; }
             case SUBI -> { return vj - (e.getImmediate() != null ? e.getImmediate() : vk); }
-            case MUL -> { return vj * vk; }
-            case DIV -> { return vk == 0 ? 0 : vj / vk; }
+            case MUL, MUL_D -> { return vj * vk; }
+            case DIV, DIV_D -> { return vk == 0 ? 0 : vj / vk; }
             case LW, LD, L_S, L_D -> {
                 // Compute effective address
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;

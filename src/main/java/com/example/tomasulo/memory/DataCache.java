@@ -7,7 +7,14 @@ import java.util.Map;
 
 public class DataCache {
     private final CacheConfig config;
-    // Simplified: map blockAddress -> bytes
+    // Direct-mapped data cache: maps blockAddress -> bytes[]
+    // Addressing strategy:
+    //   - Memory is byte-addressable.
+    //   - Each cache block holds 'blockSize' bytes.
+    //   - blockAddress = address - (address % blockSize)
+    //   - On access, if block is not present, fetch from memory (miss). Only data cache misses are considered.
+    //   - Loads/stores operate on 4 bytes (a word) at a time.
+    //   - Write-through policy for stores.
     private final Map<Integer, byte[]> blocks = new HashMap<>();
 
     public DataCache(CacheConfig config) {
