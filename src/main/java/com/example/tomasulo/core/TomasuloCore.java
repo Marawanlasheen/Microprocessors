@@ -80,9 +80,33 @@ public class TomasuloCore {
 
     public void stepCycle() {
         cycle++;
+        System.out.println("\n[DEBUG] ===== Cycle " + cycle + " =====");
         writeBackPhase();
         executePhase();
         issuePhase();
+        // Print status of all reservation stations
+        for (ReservationStationEntry e : stations.all()) {
+            System.out.println("[DEBUG] Station " + e.getName() + " (" + e.getType() + ") busy=" + e.isBusy() + " opcode=" + (e.getOpcode() == null ? "" : e.getOpcode().name()) + " rem=" + e.getRemainingCycles());
+        }
+        // Print register values
+        System.out.println("[DEBUG] Integer Registers: " + intRegisters.snapshotValues());
+        System.out.println("[DEBUG] Float Registers:   " + floatRegisters.snapshotValues());
+        // Print memory summary (first 16 words)
+        System.out.print("[DEBUG] Memory[0..63]: ");
+        for (int i = 0; i < 64; i += 4) {
+            int val = memory.loadWordRaw(i);
+            System.out.print(val + " ");
+        }
+        System.out.println();
+        // Print completed instructions
+        int committed = 0;
+        for (int i = 0; i < instStages.size(); i++) {
+            if (instStages.get(i) == InstructionStatus.Stage.COMMITTED) committed++;
+        }
+        System.out.println("[DEBUG] Instructions committed: " + committed + "/" + instStages.size());
+        if (committed == instStages.size()) {
+            System.out.println("[INFO] All instructions have finished execution and committed.");
+        }
     }
 
     private void issuePhase() {
@@ -92,7 +116,11 @@ public class TomasuloCore {
         if (unresolvedBranch) return;
         Instruction inst = program.get(pcIndex);
         ReservationStationEntry entry = mapInstructionToStation(inst);
-        if (entry == null) return; // structural stall
+        if (entry == null) {
+            System.out.println("[DEBUG] Cannot issue instruction at PC " + pcIndex + ": " + inst.getRawText() + " (no free reservation station of required type)");
+            return; // structural stall
+        }
+        System.out.println("[DEBUG] Issued instruction at PC " + pcIndex + ": " + inst.getRawText());
         // fill station (simplified: immediate capture of operands/tags)
         entry.setBusy(true);
         entry.setOpcode(inst.getOpcode());
@@ -231,6 +259,12 @@ public class TomasuloCore {
         for (ReservationStationEntry e : stations.busyEntries()) {
             Opcode op = e.getOpcode();
             if (op == null) continue;
+
+            // Prevent starting execution in the same cycle operands become ready
+            if (e.isBecameReadyThisCycle()) {
+                e.setBecameReadyThisCycle(false);
+                continue;
+            }
 
             // Check operands readiness
             boolean srcJReady = (e.getQj() == null);
@@ -372,26 +406,42 @@ public class TomasuloCore {
     private void writeBackPhase() {
         CommonDataBus.CdbResult res = cdb.arbitrate();
         if (res == null) return;
+        System.out.println("[DEBUG] CDB publishing: tag=" + res.tag + ", value=" + res.value);
         // Free producing station and broadcast to dependents
         for (ReservationStationEntry e : stations.busyEntries()) {
             if (e.getName().equals(res.tag)) {
                 e.setBusy(false);
+                System.out.println("[DEBUG] Reservation station " + e.getName() + " (type " + e.getType() + ") freed after write-back.");
                 e.setResultReady(false);
                 e.setResultValue(null);
                 if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                    instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.WRITTEN);
+                    // Advance status: WRITTEN -> COMMITTED for non-store/branch
+                    Instruction inst = program.get(e.getInstructionIndex());
+                    if (inst.getOpcode().isStore() || inst.getOpcode().isBranch()) {
+                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.WRITTEN);
+                    } else {
+                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                    }
                 }
             }
         }
         // Update waiting stations' operands
         for (ReservationStationEntry e : stations.busyEntries()) {
+            boolean becameReady = false;
             if (res.tag.equals(e.getQj())) {
+                System.out.println("[DEBUG] Station " + e.getName() + " Qj matched tag " + res.tag + ", setting Vj=" + res.value);
                 e.setQj(null);
                 e.setVj(String.valueOf(res.value));
+                becameReady = true;
             }
             if (res.tag.equals(e.getQk())) {
+                System.out.println("[DEBUG] Station " + e.getName() + " Qk matched tag " + res.tag + ", setting Vk=" + res.value);
                 e.setQk(null);
                 e.setVk(String.valueOf(res.value));
+                becameReady = true;
+            }
+            if (becameReady) {
+                e.setBecameReadyThisCycle(true);
             }
         }
         // Update register files whose tag matches
@@ -404,6 +454,7 @@ public class TomasuloCore {
         for (String reg : rf.snapshotTags().keySet()) {
             String tag = rf.getTag(reg);
             if (res.tag.equals(tag)) {
+                System.out.println("[DEBUG] Register " + reg + " tag matched CDB tag " + res.tag + ", updating value to " + res.value + " and clearing tag.");
                 rf.setValue(reg, res.value);
             }
         }

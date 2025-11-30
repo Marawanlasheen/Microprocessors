@@ -104,6 +104,8 @@ public class App extends Application {
                 userLoadBuffers = getUserInt("Load Buffers", 2);
                 userStoreBuffers = getUserInt("Store Buffers", 2);
                 userBranchStations = getUserInt("Branch Reservation Stations", 1);
+                System.out.println("[DEBUG] FP Add Stations: " + userFpAddStations);
+                System.out.println("[DEBUG] FP Mul Stations: " + userFpMulStations);
             // Prompt user for instruction latencies
             userAddLatency = getUserInt("ADD Latency (cycles)", 2);
             userSubLatency = getUserInt("SUB Latency (cycles)", 2);

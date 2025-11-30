@@ -1,6 +1,9 @@
 package com.example.tomasulo.model;
 
 public class ReservationStationEntry {
+        // Used to prevent execution starting in the same cycle operands become ready
+        private boolean becameReadyThisCycle = false;
+
     private final String name; // tag
     private final ReservationStationType type;
     private boolean busy;
@@ -68,4 +71,7 @@ public class ReservationStationEntry {
     public void setInstructionIndex(Integer instructionIndex) { this.instructionIndex = instructionIndex; }
     public String getRawText() { return rawText; }
     public void setRawText(String rawText) { this.rawText = rawText; }
+
+    public boolean isBecameReadyThisCycle() { return becameReadyThisCycle; }
+    public void setBecameReadyThisCycle(boolean val) { this.becameReadyThisCycle = val; }
 }
