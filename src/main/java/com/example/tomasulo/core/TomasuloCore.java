@@ -144,7 +144,7 @@ public class TomasuloCore {
             case MUL, MUL_D -> { return config.getLatencyConfig().getMulLatency(); }
             case DIV, DIV_D -> { return config.getLatencyConfig().getDivLatency(); }
             case LW, LD, L_S, L_D -> { return config.getCacheConfig().getHitLatency(); }
-            case SW, SD, S_S, S_D -> { return config.getCacheConfig().getHitLatency(); }
+            case SW, SD, S_S, S_D -> { return config.getLatencyConfig().getStoreLatency(); }
             case BEQ, BNE -> { return config.getLatencyConfig().getBranchLatency(); }
         }
         return 1;
@@ -283,8 +283,9 @@ public class TomasuloCore {
                 if (!srcJReady || !srcKReady) continue;
             }
 
-            // Apply cache miss penalty on first execution step for memory ops
-            if ((op.isLoad() || op.isStore()) && !e.isCacheLatencyApplied()) {
+            // Apply cache miss penalty on first execution step for LOAD ops only
+            // Stores use the configured store latency instead
+            if (op.isLoad() && !e.isCacheLatencyApplied()) {
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 e.setEffectiveAddress(addr);
@@ -292,6 +293,12 @@ public class TomasuloCore {
                 // Only add miss penalty on cache miss (hit latency already set as base)
                 int extra = hit ? 0 : config.getCacheConfig().getMissPenalty();
                 e.setRemainingCycles(e.getRemainingCycles() + extra);
+                e.setCacheLatencyApplied(true);
+            } else if (op.isStore() && !e.isCacheLatencyApplied()) {
+                // For stores, just compute effective address (no cache penalty)
+                int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
+                int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
+                e.setEffectiveAddress(addr);
                 e.setCacheLatencyApplied(true);
             }
 
@@ -332,7 +339,7 @@ public class TomasuloCore {
                         e.setResultReady(false);
                         e.setResultValue(null);
                         if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.WRITTEN);
+                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
                         }
                         continue;
                     }

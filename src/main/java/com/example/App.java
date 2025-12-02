@@ -21,7 +21,6 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-
 import java.util.*;
 
 public class App extends Application {
@@ -70,7 +69,8 @@ private int userAddLatency = 1;
 private int userSubLatency = 1;
 private int userMulLatency = 2;
 private int userDivLatency = 4;
-private int userBranchLatency = 1;    private TomasuloCore core;
+private int userBranchLatency = 1;
+private int userStoreLatency = 2;    private TomasuloCore core;
     private final InstructionParser parser = new InstructionParser();
     private final ObservableList<StationState> stationRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
@@ -113,11 +113,13 @@ private int userBranchLatency = 1;    private TomasuloCore core;
         userMulLatency = getUserInt("MUL Latency (cycles)", 2);
         userDivLatency = getUserInt("DIV Latency (cycles)", 4);
         userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
+        userStoreLatency = getUserInt("STORE Latency (cycles)", 1);
         System.out.println("[CONFIG] Instruction Latencies:");
         System.out.println("[CONFIG]   ADD/SUB: " + userAddLatency + " cycles");
         System.out.println("[CONFIG]   MUL: " + userMulLatency + " cycles");
         System.out.println("[CONFIG]   DIV: " + userDivLatency + " cycles");
         System.out.println("[CONFIG]   BRANCH: " + userBranchLatency + " cycles");
+        System.out.println("[CONFIG]   STORE: " + userStoreLatency + " cycles");
     stage.setTitle("Tomasulo Simulator");        // Prompt user for cache parameters
         userBlockSize = getUserInt("Cache Block Size (bytes)", 8);
         userCacheSize = getUserInt("Cache Size (bytes)", 128);
@@ -197,7 +199,8 @@ private int userBranchLatency = 1;    private TomasuloCore core;
             userSubLatency,
             userMulLatency,
             userDivLatency,
-            userBranchLatency
+            userBranchLatency,
+            userStoreLatency
         );
         // Use user-provided cache parameters
         CacheConfig cache = new CacheConfig(userBlockSize, userCacheSize, userHitLatency, userMissPenalty);
