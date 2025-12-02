@@ -143,8 +143,8 @@ public class TomasuloCore {
             case ADD, SUB, ADD_D, SUB_D, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
             case MUL, MUL_D -> { return config.getLatencyConfig().getMulLatency(); }
             case DIV, DIV_D -> { return config.getLatencyConfig().getDivLatency(); }
-            case LW, LD, L_S, L_D -> { return config.getLatencyConfig().getLoadLatency(); }
-            case SW, SD, S_S, S_D -> { return config.getLatencyConfig().getStoreLatency(); }
+            case LW, LD, L_S, L_D -> { return config.getCacheConfig().getHitLatency(); }
+            case SW, SD, S_S, S_D -> { return config.getCacheConfig().getHitLatency(); }
             case BEQ, BNE -> { return config.getLatencyConfig().getBranchLatency(); }
         }
         return 1;
@@ -283,14 +283,15 @@ public class TomasuloCore {
                 if (!srcJReady || !srcKReady) continue;
             }
 
-            // Apply cache latency on first execution step for memory ops
+            // Apply cache miss penalty on first execution step for memory ops
             if ((op.isLoad() || op.isStore()) && !e.isCacheLatencyApplied()) {
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 e.setEffectiveAddress(addr);
                 boolean hit = dataCache.isHit(addr);
-                int extra = config.getCacheConfig().getHitLatency() + (hit ? 0 : config.getCacheConfig().getMissPenalty());
-                e.setRemainingCycles(e.getRemainingCycles() + Math.max(0, extra));
+                // Only add miss penalty on cache miss (hit latency already set as base)
+                int extra = hit ? 0 : config.getCacheConfig().getMissPenalty();
+                e.setRemainingCycles(e.getRemainingCycles() + extra);
                 e.setCacheLatencyApplied(true);
             }
 
@@ -331,7 +332,7 @@ public class TomasuloCore {
                         e.setResultReady(false);
                         e.setResultValue(null);
                         if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.WRITTEN);
                         }
                         continue;
                     }
@@ -480,4 +481,5 @@ public class TomasuloCore {
     public RegisterFile getIntRegisters() { return intRegisters; }
     public RegisterFile getFloatRegisters() { return floatRegisters; }
     public List<HazardRecord> getHazardLog() { return hazardLog; }
+    public Memory getMemory() { return memory; }
 }

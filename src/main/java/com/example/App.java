@@ -52,29 +52,25 @@ public class App extends Application {
             // User-provided register initialization
             private Map<String, Integer> userIntRegInit = new HashMap<>();
             private Map<String, Integer> userFloatRegInit = new HashMap<>();
-        // User-configurable station/buffer sizes
-        private int userFpAddStations = 3;
-        private int userFpMulStations = 2;
-        private int userIntStations = 2;
-        private int userLoadBuffers = 2;
-        private int userStoreBuffers = 2;
-        private int userBranchStations = 1;
-    // User-configurable cache parameters
-    private int userHitLatency = 1;
-    private int userMissPenalty = 10;
-    private int userBlockSize = 16;
-    private int userCacheSize = 1024;
+    // User-configurable station/buffer sizes
+    private int userFpAddStations = 3;
+    private int userFpMulStations = 2;
+    private int userIntStations = 2;
+    private int userLoadBuffers = 2;
+    private int userStoreBuffers = 1;
+    private int userBranchStations = 1;
+// User-configurable cache parameters
+private int userHitLatency = 1;
+private int userMissPenalty = 2;
+private int userBlockSize = 8;
+private int userCacheSize = 128;
 
-    // User-configurable instruction latencies
-    private int userAddLatency = 2;
-    private int userSubLatency = 2;
-    private int userMulLatency = 4;
-    private int userDivLatency = 8;
-    private int userLoadLatency = 2;
-    private int userStoreLatency = 2;
-    private int userBranchLatency = 1;
-
-    private TomasuloCore core;
+// User-configurable instruction latencies
+private int userAddLatency = 1;
+private int userSubLatency = 1;
+private int userMulLatency = 2;
+private int userDivLatency = 4;
+private int userBranchLatency = 1;    private TomasuloCore core;
     private final InstructionParser parser = new InstructionParser();
     private final ObservableList<StationState> stationRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
@@ -102,25 +98,36 @@ public class App extends Application {
                 userFpMulStations = getUserInt("FP Mul Reservation Stations", 2);
                 userIntStations = getUserInt("Integer Reservation Stations", 2);
                 userLoadBuffers = getUserInt("Load Buffers", 2);
-                userStoreBuffers = getUserInt("Store Buffers", 2);
+                userStoreBuffers = getUserInt("Store Buffers", 1);
                 userBranchStations = getUserInt("Branch Reservation Stations", 1);
-                System.out.println("[DEBUG] FP Add Stations: " + userFpAddStations);
-                System.out.println("[DEBUG] FP Mul Stations: " + userFpMulStations);
-            // Prompt user for instruction latencies
-            userAddLatency = getUserInt("ADD Latency (cycles)", 2);
-            userSubLatency = getUserInt("SUB Latency (cycles)", 2);
-            userMulLatency = getUserInt("MUL Latency (cycles)", 4);
-            userDivLatency = getUserInt("DIV Latency (cycles)", 8);
-            userLoadLatency = getUserInt("LOAD Latency (cycles)", 2);
-            userStoreLatency = getUserInt("STORE Latency (cycles)", 2);
-            userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
-        stage.setTitle("Tomasulo Simulator");
-
-        // Prompt user for cache parameters
-        userBlockSize = getUserInt("Cache Block Size (bytes)", 16);
-        userCacheSize = getUserInt("Cache Size (bytes)", 1024);
+                System.out.println("[CONFIG] Reservation Station Sizes:");
+                System.out.println("[CONFIG]   FP Add Stations: " + userFpAddStations);
+                System.out.println("[CONFIG]   FP Mul Stations: " + userFpMulStations);
+                System.out.println("[CONFIG]   Integer Stations: " + userIntStations);
+                System.out.println("[CONFIG]   Load Buffers: " + userLoadBuffers);
+                System.out.println("[CONFIG]   Store Buffers: " + userStoreBuffers);
+                System.out.println("[CONFIG]   Branch Stations: " + userBranchStations);
+        // Prompt user for instruction latencies
+        userAddLatency = getUserInt("ADD Latency (cycles)", 1);
+        userSubLatency = getUserInt("SUB Latency (cycles)", 1);
+        userMulLatency = getUserInt("MUL Latency (cycles)", 2);
+        userDivLatency = getUserInt("DIV Latency (cycles)", 4);
+        userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
+        System.out.println("[CONFIG] Instruction Latencies:");
+        System.out.println("[CONFIG]   ADD/SUB: " + userAddLatency + " cycles");
+        System.out.println("[CONFIG]   MUL: " + userMulLatency + " cycles");
+        System.out.println("[CONFIG]   DIV: " + userDivLatency + " cycles");
+        System.out.println("[CONFIG]   BRANCH: " + userBranchLatency + " cycles");
+    stage.setTitle("Tomasulo Simulator");        // Prompt user for cache parameters
+        userBlockSize = getUserInt("Cache Block Size (bytes)", 8);
+        userCacheSize = getUserInt("Cache Size (bytes)", 128);
         userHitLatency = getUserInt("Cache Hit Latency (cycles)", 1);
-        userMissPenalty = getUserInt("Cache Miss Penalty (cycles)", 10);
+        userMissPenalty = getUserInt("Cache Miss Penalty (cycles)", 2);
+        System.out.println("[CONFIG] Cache Configuration:");
+        System.out.println("[CONFIG]   Block Size: " + userBlockSize + " bytes");
+        System.out.println("[CONFIG]   Cache Size: " + userCacheSize + " bytes");
+        System.out.println("[CONFIG]   Hit Latency: " + userHitLatency + " cycles");
+        System.out.println("[CONFIG]   Miss Penalty: " + userMissPenalty + " cycles");
 
         // Controls
         Button loadBtn = new Button("Load Program");
@@ -190,8 +197,6 @@ public class App extends Application {
             userSubLatency,
             userMulLatency,
             userDivLatency,
-            userLoadLatency,
-            userStoreLatency,
             userBranchLatency
         );
         // Use user-provided cache parameters
@@ -209,6 +214,14 @@ public class App extends Application {
         // Apply user register initialization
         userIntRegInit.forEach((reg, val) -> core.getIntRegisters().init(reg, val));
         userFloatRegInit.forEach((reg, val) -> core.getFloatRegisters().init(reg, val));
+        
+        // Preload memory with test values (address 0: 2, address 8: 5)
+        com.example.tomasulo.memory.Memory memory = core.getMemory();
+        memory.initWord(0, 2);
+        memory.initWord(8, 5);
+        System.out.println("[CONFIG] Memory Preloaded:");
+        System.out.println("[CONFIG]   Address 0: " + memory.loadWordRaw(0));
+        System.out.println("[CONFIG]   Address 8: " + memory.loadWordRaw(8));
     }
 
     private TableView<StationState> buildStationTable() {
@@ -428,7 +441,7 @@ public class App extends Application {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Register Initialization");
         dialog.setHeaderText("Preload Integer and Float Registers (format: R0=5, F2=3, ...)");
-        TextArea regArea = new TextArea();
+        TextArea regArea = new TextArea("R2=0, F4=3");
         regArea.setPromptText("R0=5, R1=10, F0=3, F1=0 ...");
         regArea.setPrefRowCount(4);
         dialog.getDialogPane().setContent(regArea);
