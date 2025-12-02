@@ -65,12 +65,12 @@ private int userBlockSize = 8;
 private int userCacheSize = 128;
 
 // User-configurable instruction latencies
-private int userAddLatency = 1;
-private int userSubLatency = 1;
-private int userMulLatency = 2;
-private int userDivLatency = 4;
+private int userAddLatency = 2;
+private int userSubLatency = 2;
+private int userMulLatency = 10;
+private int userDivLatency = 10;
 private int userBranchLatency = 1;
-private int userStoreLatency = 2;    private TomasuloCore core;
+private int userStoreLatency = 1;    private TomasuloCore core;
     private final InstructionParser parser = new InstructionParser();
     private final ObservableList<StationState> stationRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
@@ -108,10 +108,10 @@ private int userStoreLatency = 2;    private TomasuloCore core;
                 System.out.println("[CONFIG]   Store Buffers: " + userStoreBuffers);
                 System.out.println("[CONFIG]   Branch Stations: " + userBranchStations);
         // Prompt user for instruction latencies
-        userAddLatency = getUserInt("ADD Latency (cycles)", 1);
-        userSubLatency = getUserInt("SUB Latency (cycles)", 1);
-        userMulLatency = getUserInt("MUL Latency (cycles)", 2);
-        userDivLatency = getUserInt("DIV Latency (cycles)", 4);
+        userAddLatency = getUserInt("ADD Latency (cycles)", 2);
+        userSubLatency = getUserInt("SUB Latency (cycles)", 2);
+        userMulLatency = getUserInt("MUL Latency (cycles)", 10);
+        userDivLatency = getUserInt("DIV Latency (cycles)", 10);
         userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
         userStoreLatency = getUserInt("STORE Latency (cycles)", 1);
         System.out.println("[CONFIG] Instruction Latencies:");
@@ -218,13 +218,13 @@ private int userStoreLatency = 2;    private TomasuloCore core;
         userIntRegInit.forEach((reg, val) -> core.getIntRegisters().init(reg, val));
         userFloatRegInit.forEach((reg, val) -> core.getFloatRegisters().init(reg, val));
         
-        // Preload memory with test values (address 0: 2, address 8: 5)
+        // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(0, 2);
-        memory.initWord(8, 5);
+        memory.initWord(100, 0);  // Memory[100] for L.D F6, 0(R2) where R2=100
+        memory.initWord(120, 0);  // Memory[120] for L.D F2, 20(R2) where R2=100
         System.out.println("[CONFIG] Memory Preloaded:");
-        System.out.println("[CONFIG]   Address 0: " + memory.loadWordRaw(0));
-        System.out.println("[CONFIG]   Address 8: " + memory.loadWordRaw(8));
+        System.out.println("[CONFIG]   Address 100: " + memory.loadWordRaw(100));
+        System.out.println("[CONFIG]   Address 120: " + memory.loadWordRaw(120));
     }
 
     private TableView<StationState> buildStationTable() {
@@ -444,7 +444,7 @@ private int userStoreLatency = 2;    private TomasuloCore core;
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Register Initialization");
         dialog.setHeaderText("Preload Integer and Float Registers (format: R0=5, F2=3, ...)");
-        TextArea regArea = new TextArea("R2=0, F4=3");
+        TextArea regArea = new TextArea("R2=100, F1=2, F3=3, F4=5");
         regArea.setPromptText("R0=5, R1=10, F0=3, F1=0 ...");
         regArea.setPrefRowCount(4);
         dialog.getDialogPane().setContent(regArea);

@@ -290,9 +290,15 @@ public class TomasuloCore {
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 e.setEffectiveAddress(addr);
                 boolean hit = dataCache.isHit(addr);
-                // Only add miss penalty on cache miss (hit latency already set as base)
-                int extra = hit ? 0 : config.getCacheConfig().getMissPenalty();
-                e.setRemainingCycles(e.getRemainingCycles() + extra);
+                // On cache hit: complete immediately (set to 0 so it completes this cycle)
+                // On cache miss: add miss penalty to hit latency and fetch block into cache now
+                if (hit) {
+                    e.setRemainingCycles(0); // Complete immediately on hit
+                } else {
+                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getMissPenalty());
+                    // Pre-fetch the block into cache so subsequent accesses to same block are hits
+                    dataCache.loadWord(addr, memory);
+                }
                 e.setCacheLatencyApplied(true);
             } else if (op.isStore() && !e.isCacheLatencyApplied()) {
                 // For stores, just compute effective address (no cache penalty)
@@ -331,38 +337,50 @@ public class TomasuloCore {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.EXECUTING);
                     }
                 }
-                if (e.getRemainingCycles() == 0) {
-                    if (op.isStore()) {
-                        // perform store, free station; no CDB publish
-                        computeResult(e); // side-effect store
-                        e.setBusy(false);
-                        e.setResultReady(false);
-                        e.setResultValue(null);
-                        if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+            }
+            
+            // Check if instruction completed (either just now or cache hit made it 0)
+            if (e.getRemainingCycles() == 0) {
+                // Mark as started if not already (for cache hits that complete immediately)
+                if (!e.isStartedExecution()) {
+                    e.setStartedExecution(true);
+                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                        if (instStages.get(e.getInstructionIndex()) == InstructionStatus.Stage.ISSUED) {
+                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.EXECUTING);
                         }
-                        continue;
                     }
-                    int result = computeResult(e);
-                    e.setResultValue(result);
-                    e.setResultReady(true);
-                    if (op.isBranch()) {
-                        // Resolve branch: adjust PC and free station (no CDB)
-                        if (result == 1) {
-                            int offset = (e.getImmediate() == null) ? 0 : e.getImmediate();
-                            pcIndex = pcIndex + offset;
-                            if (pcIndex < 0) pcIndex = 0;
-                            if (pcIndex > program.size()) pcIndex = program.size();
-                        }
-                        e.setBusy(false);
-                        e.setResultReady(false);
-                        e.setResultValue(null);
-                        if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
-                        }
-                    } else {
-                        cdb.requestPublish(e.getName(), e.getResultValue());
+                }
+                
+                if (op.isStore()) {
+                    // perform store, free station; no CDB publish
+                    computeResult(e); // side-effect store
+                    e.setBusy(false);
+                    e.setResultReady(false);
+                    e.setResultValue(null);
+                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
                     }
+                    continue;
+                }
+                int result = computeResult(e);
+                e.setResultValue(result);
+                e.setResultReady(true);
+                if (op.isBranch()) {
+                    // Resolve branch: adjust PC and free station (no CDB)
+                    if (result == 1) {
+                        int offset = (e.getImmediate() == null) ? 0 : e.getImmediate();
+                        pcIndex = pcIndex + offset;
+                        if (pcIndex < 0) pcIndex = 0;
+                        if (pcIndex > program.size()) pcIndex = program.size();
+                    }
+                    e.setBusy(false);
+                    e.setResultReady(false);
+                    e.setResultValue(null);
+                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                    }
+                } else {
+                    cdb.requestPublish(e.getName(), e.getResultValue());
                 }
             }
         }

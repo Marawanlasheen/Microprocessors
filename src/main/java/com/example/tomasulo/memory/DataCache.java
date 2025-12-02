@@ -36,7 +36,24 @@ public class DataCache {
         byte[] block = blocks.get(blockAddress);
         int offset = address % config.getBlockSizeBytes();
         byte[] word = new byte[4];
-        System.arraycopy(block, offset, word, 0, 4);
+        
+        // Check if the 4-byte word spans across block boundary
+        int bytesInCurrentBlock = config.getBlockSizeBytes() - offset;
+        if (bytesInCurrentBlock >= 4) {
+            // Word fits entirely in current block
+            System.arraycopy(block, offset, word, 0, 4);
+        } else {
+            // Word spans two blocks - copy from current block
+            System.arraycopy(block, offset, word, 0, bytesInCurrentBlock);
+            // Fetch next block and copy remaining bytes
+            int nextBlockAddress = blockAddress + config.getBlockSizeBytes();
+            if (!blocks.containsKey(nextBlockAddress)) {
+                byte[] fetchedNext = memory.fetchBlock(nextBlockAddress, config.getBlockSizeBytes());
+                blocks.put(nextBlockAddress, fetchedNext);
+            }
+            byte[] nextBlock = blocks.get(nextBlockAddress);
+            System.arraycopy(nextBlock, 0, word, bytesInCurrentBlock, 4 - bytesInCurrentBlock);
+        }
         return word;
     }
 
@@ -48,9 +65,27 @@ public class DataCache {
         }
         byte[] block = blocks.get(blockAddress);
         int offset = address % config.getBlockSizeBytes();
-        System.arraycopy(data, 0, block, offset, 4);
-        // write-through simplified
-        memory.storeBlock(blockAddress, block);
+        
+        // Check if the 4-byte word spans across block boundary
+        int bytesInCurrentBlock = config.getBlockSizeBytes() - offset;
+        if (bytesInCurrentBlock >= 4) {
+            // Word fits entirely in current block
+            System.arraycopy(data, 0, block, offset, 4);
+            memory.storeBlock(blockAddress, block);
+        } else {
+            // Word spans two blocks - write to current block
+            System.arraycopy(data, 0, block, offset, bytesInCurrentBlock);
+            memory.storeBlock(blockAddress, block);
+            // Fetch next block and write remaining bytes
+            int nextBlockAddress = blockAddress + config.getBlockSizeBytes();
+            if (!blocks.containsKey(nextBlockAddress)) {
+                byte[] fetchedNext = memory.fetchBlock(nextBlockAddress, config.getBlockSizeBytes());
+                blocks.put(nextBlockAddress, fetchedNext);
+            }
+            byte[] nextBlock = blocks.get(nextBlockAddress);
+            System.arraycopy(data, bytesInCurrentBlock, nextBlock, 0, 4 - bytesInCurrentBlock);
+            memory.storeBlock(nextBlockAddress, nextBlock);
+        }
     }
 
     private int blockAddress(int address) {
