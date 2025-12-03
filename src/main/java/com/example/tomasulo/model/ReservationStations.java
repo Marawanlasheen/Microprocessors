@@ -13,7 +13,8 @@ public class ReservationStations {
 
     public ReservationStationEntry findFree(ReservationStationType type) {
         for (ReservationStationEntry e : entries) {
-            if (e.getType() == type && !e.isBusy()) {
+            // Station must be not busy AND not freed in the current cycle
+            if (e.getType() == type && !e.isBusy() && !e.isFreedThisCycle()) {
                 return e;
             }
         }

@@ -3,6 +3,8 @@ package com.example.tomasulo.model;
 public class ReservationStationEntry {
         // Used to prevent execution starting in the same cycle operands become ready
         private boolean becameReadyThisCycle = false;
+        // Used to prevent reusing a station in the same cycle it was freed
+        private boolean freedThisCycle = false;
 
     private final String name; // tag
     private final ReservationStationType type;
@@ -77,4 +79,6 @@ public class ReservationStationEntry {
     public void setBecameReadyThisCycle(boolean val) { this.becameReadyThisCycle = val; }
     public byte[] getLoadedData() { return loadedData; }
     public void setLoadedData(byte[] loadedData) { this.loadedData = loadedData; }
+    public boolean isFreedThisCycle() { return freedThisCycle; }
+    public void setFreedThisCycle(boolean freedThisCycle) { this.freedThisCycle = freedThisCycle; }
 }

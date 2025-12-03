@@ -86,6 +86,10 @@ public class TomasuloCore {
     public void stepCycle() {
         cycle++;
         System.out.println("\n[DEBUG] ===== Cycle " + cycle + " =====");
+        // Clear freedThisCycle flags from previous cycle
+        for (ReservationStationEntry e : stations.all()) {
+            e.setFreedThisCycle(false);
+        }
         writeBackPhase();
         executePhase();
         issuePhase();
@@ -375,8 +379,9 @@ public class TomasuloCore {
                     }
                 }
                 
-                // Set execute end cycle
-                if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                // Set execute end cycle ONLY if result is not already ready (i.e., just finished execution)
+                // This prevents updating executeEndCycle while waiting for CDB
+                if (!e.isResultReady() && e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
                     instructionStatuses.get(e.getInstructionIndex()).setExecuteEndCycle(cycle);
                 }
                 
@@ -478,6 +483,7 @@ public class TomasuloCore {
                 
                 // Free the reservation station
                 e.setBusy(false);
+                e.setFreedThisCycle(true);  // Mark as freed this cycle
                 e.setResultReady(false);
                 e.setResultValue(null);
                 
@@ -498,6 +504,7 @@ public class TomasuloCore {
         for (ReservationStationEntry e : stations.busyEntries()) {
             if (e.getName().equals(res.tag)) {
                 e.setBusy(false);
+                e.setFreedThisCycle(true);  // Mark as freed this cycle
                 System.out.println("[DEBUG] Reservation station " + e.getName() + " (type " + e.getType() + ") freed after write-back.");
                 e.setResultReady(false);
                 e.setResultValue(null);
