@@ -289,8 +289,10 @@ public class TomasuloCore {
             } else if (op.isStore()) {
                 if (!srcJReady || !srcKReady) continue; // wait for base and value
             } else if (!op.isBranch()) {
-                // arithmetic FP/int: need both ready; for ADDI/SUBI Vk may be immediate
-                if (!srcJReady || (e.getVk() == null && !srcKReady)) continue;
+                // arithmetic FP/int: need both ready
+                // For ADDI/SUBI, Vk contains the immediate value (always ready)
+                // For other ops, check if Qk is clear (operand ready)
+                if (!srcJReady || !srcKReady) continue;
             } else {
                 // Branch needs both operands ready
                 if (!srcJReady || !srcKReady) continue;
