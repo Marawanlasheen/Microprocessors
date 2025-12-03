@@ -76,7 +76,6 @@ private int userStoreLatency = 1;    private TomasuloCore core;
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> floatRegRows = FXCollections.observableArrayList();
     private final ObservableList<InstructionRow> instrRows = FXCollections.observableArrayList();
-    private final ObservableList<HazardRow> hazardRows = FXCollections.observableArrayList();
     private final TextArea programArea = new TextArea();
     private final Label cycleLabel = new Label("Cycle: 0");
 
@@ -149,7 +148,6 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         TableView<RegRow> intRegTable = buildRegTable("Integer Registers");
         TableView<RegRow> floatRegTable = buildRegTable("Float Registers");
         TableView<InstructionRow> instrTable = buildInstrTable();
-        TableView<HazardRow> hazardTable = buildHazardTable();
 
         // Register tables side by side under program area
         VBox programBox = new VBox(4, new Label("Program"), programArea);
@@ -168,7 +166,6 @@ private int userStoreLatency = 1;    private TomasuloCore core;
 
         VBox right = new VBox(8, new Label("Reservation Stations"), stationTable,
             new Label("Instruction Queue"), instrTable,
-            new Label("Hazards"), hazardTable,
             new Label("Address Clashes"), addressClashTable);
         right.setPadding(new Insets(8));
 
@@ -329,12 +326,8 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         // Instructions
         instrRows.clear();
         for (InstructionStatus is : snap.getInstructionQueue()) {
-            instrRows.add(new InstructionRow(is.getPcIndex(), is.getText(), is.getStage().name()));
-        }
-        // Hazards
-        hazardRows.clear();
-        for (HazardRecord hr : snap.getHazards()) {
-            hazardRows.add(new HazardRow(hr.getCycle(), hr.getType().name(), hr.getCausingStation(), hr.getAffectedStation(), hr.getRegister()));
+            instrRows.add(new InstructionRow(is.getPcIndex(), is.getText(), is.getStage().name(), 
+                is.getIssueCycle(), is.getExecuteStartCycle(), is.getExecuteEndCycle(), is.getCommitCycle()));
         }
     }
 
@@ -363,34 +356,32 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         TableView<InstructionRow> tv = new TableView<>(instrRows);
         TableColumn<InstructionRow, Number> cPc = new TableColumn<>("PC");
         cPc.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().pc));
-        TableColumn<InstructionRow, String> cText = new TableColumn<>("Text");
+        TableColumn<InstructionRow, String> cText = new TableColumn<>("Instruction");
         cText.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().text));
         TableColumn<InstructionRow, String> cStage = new TableColumn<>("Stage");
         cStage.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().stage));
+        TableColumn<InstructionRow, String> cIssue = new TableColumn<>("Issue");
+        cIssue.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().issueCycle == -1 ? "" : String.valueOf(cd.getValue().issueCycle)));
+        TableColumn<InstructionRow, String> cExecStart = new TableColumn<>("Exec Start");
+        cExecStart.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().executeStartCycle == -1 ? "" : String.valueOf(cd.getValue().executeStartCycle)));
+        TableColumn<InstructionRow, String> cExecEnd = new TableColumn<>("Exec End");
+        cExecEnd.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().executeEndCycle == -1 ? "" : String.valueOf(cd.getValue().executeEndCycle)));
+        TableColumn<InstructionRow, String> cCommit = new TableColumn<>("Commit");
+        cCommit.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().commitCycle == -1 ? "" : String.valueOf(cd.getValue().commitCycle)));
         tv.getColumns().add(cPc);
         tv.getColumns().add(cText);
         tv.getColumns().add(cStage);
-        tv.setPrefHeight(200);
-        return tv;
-    }
-
-    private TableView<HazardRow> buildHazardTable() {
-        TableView<HazardRow> tv = new TableView<>(hazardRows);
-        TableColumn<HazardRow, Number> cCycle = new TableColumn<>("Cycle");
-        cCycle.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().cycle));
-        TableColumn<HazardRow, String> cType = new TableColumn<>("Type");
-        cType.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().type));
-        TableColumn<HazardRow, String> cCause = new TableColumn<>("Cause");
-        cCause.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().causing));
-        TableColumn<HazardRow, String> cAff = new TableColumn<>("Affected");
-        cAff.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().affected));
-        TableColumn<HazardRow, String> cReg = new TableColumn<>("Register");
-        cReg.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().reg));
-        tv.getColumns().add(cCycle);
-        tv.getColumns().add(cType);
-        tv.getColumns().add(cCause);
-        tv.getColumns().add(cAff);
-        tv.getColumns().add(cReg);
+        tv.getColumns().add(cIssue);
+        tv.getColumns().add(cExecStart);
+        tv.getColumns().add(cExecEnd);
+        tv.getColumns().add(cCommit);
+        cPc.setPrefWidth(40);
+        cText.setPrefWidth(180);
+        cStage.setPrefWidth(90);
+        cIssue.setPrefWidth(60);
+        cExecStart.setPrefWidth(80);
+        cExecEnd.setPrefWidth(80);
+        cCommit.setPrefWidth(60);
         tv.setPrefHeight(200);
         return tv;
     }
@@ -399,15 +390,18 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         public final int pc;
         public final String text;
         public final String stage;
-        public InstructionRow(int pc, String text, String stage) {
-            this.pc = pc; this.text = text; this.stage = stage;
-        }
-    }
-
-    public static class HazardRow {
-        public final int cycle; public final String type; public final String causing; public final String affected; public final String reg;
-        public HazardRow(int cycle, String type, String causing, String affected, String reg) {
-            this.cycle = cycle; this.type = type; this.causing = causing; this.affected = affected; this.reg = reg;
+        public final int issueCycle;
+        public final int executeStartCycle;
+        public final int executeEndCycle;
+        public final int commitCycle;
+        public InstructionRow(int pc, String text, String stage, int issueCycle, int executeStartCycle, int executeEndCycle, int commitCycle) {
+            this.pc = pc; 
+            this.text = text; 
+            this.stage = stage;
+            this.issueCycle = issueCycle;
+            this.executeStartCycle = executeStartCycle;
+            this.executeEndCycle = executeEndCycle;
+            this.commitCycle = commitCycle;
         }
     }
 

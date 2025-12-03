@@ -19,6 +19,7 @@ public class TomasuloCore {
     private final CommonDataBus cdb = new CommonDataBus();
     private final List<Instruction> program = new ArrayList<>();
     private final List<InstructionStatus.Stage> instStages = new ArrayList<>();
+    private final List<InstructionStatus> instructionStatuses = new ArrayList<>();
     private int pcIndex = 0;
     private int cycle = 0;
     private final List<HazardRecord> hazardLog = new ArrayList<>();
@@ -73,7 +74,11 @@ public class TomasuloCore {
         pcIndex = 0;
         cycle = 0;
         instStages.clear();
-        for (int i = 0; i < program.size(); i++) instStages.add(InstructionStatus.Stage.QUEUED);
+        instructionStatuses.clear();
+        for (int i = 0; i < program.size(); i++) {
+            instStages.add(InstructionStatus.Stage.QUEUED);
+            instructionStatuses.add(new InstructionStatus(i, instructions.get(i).getRawText(), InstructionStatus.Stage.QUEUED));
+        }
     }
 
     public int getCycle() { return cycle; }
@@ -134,7 +139,11 @@ public class TomasuloCore {
         entry.setRawText(inst.getRawText());
         assignOperands(entry, inst);
         entry.setRemainingCycles(latencyFor(inst.getOpcode()));
-        if (pcIndex < instStages.size()) instStages.set(pcIndex, InstructionStatus.Stage.ISSUED);
+        if (pcIndex < instStages.size()) {
+            instStages.set(pcIndex, InstructionStatus.Stage.ISSUED);
+            instructionStatuses.get(pcIndex).setStage(InstructionStatus.Stage.ISSUED);
+            instructionStatuses.get(pcIndex).setIssueCycle(cycle);
+        }
         pcIndex++;
     }
 
@@ -331,11 +340,17 @@ public class TomasuloCore {
 
             if (e.getRemainingCycles() > 0) {
                 e.setRemainingCycles(e.getRemainingCycles() - 1);
-                e.setStartedExecution(true);
-                if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                    if (instStages.get(e.getInstructionIndex()) == InstructionStatus.Stage.ISSUED) {
-                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.EXECUTING);
+                if (!e.isStartedExecution()) {
+                    e.setStartedExecution(true);
+                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                        if (instStages.get(e.getInstructionIndex()) == InstructionStatus.Stage.ISSUED) {
+                            instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.EXECUTING);
+                            instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.EXECUTING);
+                            instructionStatuses.get(e.getInstructionIndex()).setExecuteStartCycle(cycle);
+                        }
                     }
+                } else {
+                    e.setStartedExecution(true);
                 }
             }
             
@@ -347,8 +362,15 @@ public class TomasuloCore {
                     if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
                         if (instStages.get(e.getInstructionIndex()) == InstructionStatus.Stage.ISSUED) {
                             instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.EXECUTING);
+                            instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.EXECUTING);
+                            instructionStatuses.get(e.getInstructionIndex()).setExecuteStartCycle(cycle);
                         }
                     }
+                }
+                
+                // Set execute end cycle
+                if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                    instructionStatuses.get(e.getInstructionIndex()).setExecuteEndCycle(cycle);
                 }
                 
                 if (op.isStore()) {
@@ -359,6 +381,8 @@ public class TomasuloCore {
                     e.setResultValue(null);
                     if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
                     }
                     continue;
                 }
@@ -378,6 +402,8 @@ public class TomasuloCore {
                     e.setResultValue(null);
                     if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
                     }
                 } else {
                     cdb.requestPublish(e.getName(), e.getResultValue());
@@ -445,8 +471,11 @@ public class TomasuloCore {
                     Instruction inst = program.get(e.getInstructionIndex());
                     if (inst.getOpcode().isStore() || inst.getOpcode().isBranch()) {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.WRITTEN);
+                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.WRITTEN);
                     } else {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
+                        instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
                     }
                 }
             }
@@ -493,13 +522,8 @@ public class TomasuloCore {
         )).collect(Collectors.toList());
         // Only include hazards for current or previous cycles (could filter if needed)
         List<HazardRecord> recentHazards = hazardLog.stream().filter(h -> h.getCycle() <= cycle).collect(Collectors.toList());
-        List<InstructionStatus> queue = new ArrayList<>();
-        for (int i = 0; i < program.size(); i++) {
-            InstructionStatus.Stage st = (i < instStages.size()) ? instStages.get(i) : InstructionStatus.Stage.QUEUED;
-            queue.add(new InstructionStatus(i, program.get(i).getRawText(), st));
-        }
         return new CycleSnapshot(cycle, pcIndex, stationStates, intRegisters.snapshotValues(), intRegisters.snapshotTags(),
-            floatRegisters.snapshotValues(), floatRegisters.snapshotTags(), recentHazards, queue);
+            floatRegisters.snapshotValues(), floatRegisters.snapshotTags(), recentHazards, new ArrayList<>(instructionStatuses));
     }
 
     public ReservationStations getStations() { return stations; }
