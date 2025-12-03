@@ -6,7 +6,6 @@ import com.example.tomasulo.config.SimulationConfig;
 import com.example.tomasulo.config.StationSizeConfig;
 import com.example.tomasulo.core.CycleSnapshot;
 import com.example.tomasulo.core.StationState;
-import com.example.tomasulo.core.HazardRecord;
 import com.example.tomasulo.core.InstructionStatus;
 import com.example.tomasulo.core.TomasuloCore;
 import com.example.tomasulo.model.Instruction;
@@ -24,31 +23,7 @@ import javafx.stage.Stage;
 import java.util.*;
 
 public class App extends Application {
-                private final ObservableList<AddressClashRow> addressClashRows = FXCollections.observableArrayList();
-
-            // Address clash row for table
-            public static class AddressClashRow {
-                public final int cycle; public final String causing; public final String affected; public final String addr;
-                public AddressClashRow(int cycle, String causing, String affected, String addr) {
-                    this.cycle = cycle; this.causing = causing; this.affected = affected; this.addr = addr;
-                }
-            }
-
-            private TableView<AddressClashRow> buildAddressClashTable() {
-                TableView<AddressClashRow> tv = new TableView<>(addressClashRows);
-                TableColumn<AddressClashRow, Number> cCycle = new TableColumn<>("Cycle");
-                cCycle.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().cycle));
-                TableColumn<AddressClashRow, String> cCause = new TableColumn<>("Cause");
-                cCause.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().causing));
-                TableColumn<AddressClashRow, String> cAff = new TableColumn<>("Affected");
-                cAff.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().affected));
-                TableColumn<AddressClashRow, String> cAddr = new TableColumn<>("Address/Register");
-                cAddr.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().addr));
-                tv.getColumns().addAll(cCycle, cCause, cAff, cAddr);
-                tv.setPrefHeight(120);
-                return tv;
-            }
-            // User-provided register initialization
+    // User-provided register initialization
             private Map<String, Integer> userIntRegInit = new HashMap<>();
             private Map<String, Integer> userFloatRegInit = new HashMap<>();
     // User-configurable station/buffer sizes
@@ -70,7 +45,9 @@ private int userSubLatency = 2;
 private int userMulLatency = 10;
 private int userDivLatency = 10;
 private int userBranchLatency = 1;
-private int userStoreLatency = 1;    private TomasuloCore core;
+private int userStoreLatency = 1;
+private int userLoadLatency = 2;
+    private TomasuloCore core;
     private final InstructionParser parser = new InstructionParser();
     private final ObservableList<StationState> stationRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
@@ -82,9 +59,8 @@ private int userStoreLatency = 1;    private TomasuloCore core;
 
     @Override
     public void start(Stage stage) {
-                            TableView<AddressClashRow> addressClashTable = buildAddressClashTable();
-                        // Help menu for cache/memory documentation
-                        MenuBar menuBar = new MenuBar();
+        // Help menu for cache/memory documentation
+        MenuBar menuBar = new MenuBar();
                         Menu helpMenu = new Menu("Help");
                         MenuItem cacheHelp = new MenuItem("Cache Addressing Info");
                         helpMenu.getItems().add(cacheHelp);
@@ -112,12 +88,14 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         userSubLatency = getUserInt("SUB Latency (cycles)", 2);
         userMulLatency = getUserInt("MUL Latency (cycles)", 10);
         userDivLatency = getUserInt("DIV Latency (cycles)", 10);
+        userLoadLatency = getUserInt("LOAD Latency (cycles)", 2);
         userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
         userStoreLatency = getUserInt("STORE Latency (cycles)", 1);
         System.out.println("[CONFIG] Instruction Latencies:");
         System.out.println("[CONFIG]   ADD/SUB: " + userAddLatency + " cycles");
         System.out.println("[CONFIG]   MUL: " + userMulLatency + " cycles");
         System.out.println("[CONFIG]   DIV: " + userDivLatency + " cycles");
+        System.out.println("[CONFIG]   LOAD: " + userLoadLatency + " cycles");
         System.out.println("[CONFIG]   BRANCH: " + userBranchLatency + " cycles");
         System.out.println("[CONFIG]   STORE: " + userStoreLatency + " cycles");
     stage.setTitle("Tomasulo Simulator");        // Prompt user for cache parameters
@@ -168,8 +146,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
 
         VBox right = new VBox(8, new Label("Reservation Stations"), stationTable,
             new Label("Instruction Queue"), instrTable,
-            new Label("Data Cache"), cacheTable,
-            new Label("Address Clashes"), addressClashTable);
+            new Label("Data Cache"), cacheTable);
         right.setPadding(new Insets(8));
 
         BorderPane root = new BorderPane();
@@ -188,7 +165,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         run10Btn.setOnAction(e -> { for (int i = 0; i < 10; i++) doStep(); });
         resetBtn.setOnAction(e -> { initCoreWithDefaults(); refreshTables(); });
 
-        stage.setScene(new Scene(root, 1200, 800));
+        stage.setScene(new Scene(root, 1400, 900));
         stage.show();
     }
 
@@ -200,7 +177,8 @@ private int userStoreLatency = 1;    private TomasuloCore core;
             userMulLatency,
             userDivLatency,
             userBranchLatency,
-            userStoreLatency
+            userStoreLatency,
+            userLoadLatency
         );
         // Use user-provided cache parameters
         CacheConfig cache = new CacheConfig(userBlockSize, userCacheSize, userHitLatency, userMissPenalty);
@@ -212,7 +190,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
             userStoreBuffers,
             userBranchStations
         );
-        SimulationConfig cfg = new SimulationConfig(lat, cache, sizes, 16, 16);
+        SimulationConfig cfg = new SimulationConfig(lat, cache, sizes, 32, 32);
         core = new TomasuloCore(cfg, 4096);
         // Apply user register initialization
         userIntRegInit.forEach((reg, val) -> core.getIntRegisters().init(reg, val));
@@ -220,10 +198,12 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         
         // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(100, 10);  // Memory[100] for L.D F6, 0(R2) where R2=100
+        memory.initWord(100, 10);  // Memory[100] = 10 (writes bytes at 100-103: 0A 00 00 00)
+        memory.initWord(104, 5);   // Memory[104] = 5 (writes bytes at 104-107: 05 00 00 00)
         memory.initWord(120, 25);  // Memory[120] for L.D F2, 20(R2) where R2=100
         System.out.println("[CONFIG] Memory Preloaded:");
         System.out.println("[CONFIG]   Address 100: " + memory.loadWordRaw(100));
+        System.out.println("[CONFIG]   Address 104: " + memory.loadWordRaw(104));
         System.out.println("[CONFIG]   Address 120: " + memory.loadWordRaw(120));
         System.out.println("[CONFIG] With these values, your test program should compute:");
         System.out.println("[CONFIG]   F6 = 10 (from address 100)");
@@ -290,7 +270,10 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         tv.getColumns().add(cVal);
         tv.getColumns().add(cTag);
         if (title.contains("Integer")) tv.setItems(intRegRows); else tv.setItems(floatRegRows);
-        tv.setPrefHeight(180);
+        tv.setPrefHeight(550);  // Increased to show all 32 registers
+        cName.setPrefWidth(40);
+        cVal.setPrefWidth(60);
+        cTag.setPrefWidth(60);
         return tv;
     }
 
@@ -314,15 +297,6 @@ private int userStoreLatency = 1;    private TomasuloCore core;
     }
 
     private void refreshTables() {
-        // Address clashes
-        addressClashRows.clear();
-        if (core instanceof com.example.tomasulo.core.TomasuloCore) {
-            for (HazardRecord hr : ((com.example.tomasulo.core.TomasuloCore)core).getHazardLog()) {
-                if ("ADDRESS_CLASH".equals(hr.getType().name())) {
-                    addressClashRows.add(new AddressClashRow(hr.getCycle(), hr.getCausingStation(), hr.getAffectedStation(), hr.getRegister()));
-                }
-            }
-        }
         CycleSnapshot snap = core.snapshot();
         cycleLabel.setText("Cycle: " + snap.getCycle());
         stationRows.setAll(snap.getStations());
@@ -348,6 +322,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
             int cacheSize = core.getDataCache().getConfig().getCacheSizeBytes();
             int numSlots = cacheSize / blockSize;
             
+            System.out.println("[UI] Updating cache display - found " + cacheBlocks.size() + " blocks in cache");
             for (java.util.Map.Entry<Integer, byte[]> entry : cacheBlocks.entrySet()) {
                 int blockAddress = entry.getKey();
                 int cacheSlot = (blockAddress / blockSize) % numSlots;
@@ -356,6 +331,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
                 for (byte b : entry.getValue()) {
                     hex.append(String.format("%02X ", b & 0xFF));
                 }
+                System.out.println("[UI] Adding cache row - Slot: " + cacheSlot + ", BlockAddr: " + blockAddress + ", Data: " + hex.toString().trim());
                 cacheRows.add(new CacheRow(cacheSlot, blockAddress, hex.toString().trim()));
             }
             // Sort by cache slot number
@@ -498,9 +474,9 @@ private int userStoreLatency = 1;    private TomasuloCore core;
     private void showRegisterInitDialog() {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Register Initialization");
-        dialog.setHeaderText("Preload Integer and Float Registers (format: R0=5, F2=3, ...)");
+        dialog.setHeaderText("Preload Integer and Float Registers\n(Note: R0 is hardwired to 0 and cannot be changed)\nFormat: R1=5, F2=3, ...");
         TextArea regArea = new TextArea("R2=100, F1=2, F3=3, F4=5");
-        regArea.setPromptText("R0=5, R1=10, F0=3, F1=0 ...");
+        regArea.setPromptText("R1=10, R2=20, F0=3, F1=0 ...");
         regArea.setPrefRowCount(4);
         dialog.getDialogPane().setContent(regArea);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
@@ -518,6 +494,11 @@ private int userStoreLatency = 1;    private TomasuloCore core;
                 String reg = parts[0].trim().toUpperCase();
                 try {
                     int val = Integer.parseInt(parts[1].trim());
+                    // R0 is hardwired to 0 and cannot be initialized
+                    if (reg.equals("R0")) {
+                        System.out.println("[CONFIG] Warning: R0 is hardwired to 0 and cannot be changed. Ignoring initialization.");
+                        continue;
+                    }
                     if (reg.startsWith("R")) userIntRegInit.put(reg, val);
                     else if (reg.startsWith("F")) userFloatRegInit.put(reg, val);
                 } catch (Exception ignored) {}

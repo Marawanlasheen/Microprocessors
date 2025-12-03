@@ -25,6 +25,7 @@ public class ReservationStationEntry {
     private Integer effectiveAddress; // computed when base ready for memory ops
     private Integer instructionIndex; // index in program for ordering & UI
     private String rawText;
+    private byte[] loadedData; // cached data from memory/cache for LOAD operations
 
     public ReservationStationEntry(String name, ReservationStationType type) {
         this.name = name;
@@ -74,4 +75,6 @@ public class ReservationStationEntry {
 
     public boolean isBecameReadyThisCycle() { return becameReadyThisCycle; }
     public void setBecameReadyThisCycle(boolean val) { this.becameReadyThisCycle = val; }
+    public byte[] getLoadedData() { return loadedData; }
+    public void setLoadedData(byte[] loadedData) { this.loadedData = loadedData; }
 }

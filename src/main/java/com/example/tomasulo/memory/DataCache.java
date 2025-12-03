@@ -23,15 +23,22 @@ public class DataCache {
 
     public boolean isHit(int address) {
         int blockAddress = blockAddress(address);
-        return blocks.containsKey(blockAddress);
+        boolean hit = blocks.containsKey(blockAddress);
+        System.out.println("[CACHE] isHit check - Address: " + address + ", BlockAddress: " + blockAddress + ", Result: " + (hit ? "HIT" : "MISS"));
+        return hit;
     }
 
     public byte[] loadWord(int address, Memory memory) {
         int blockAddress = blockAddress(address);
+        System.out.println("[CACHE] loadWord called - Address: " + address + ", BlockAddress: " + blockAddress);
         if (!blocks.containsKey(blockAddress)) {
             // miss: fetch full block
+            System.out.println("[CACHE] MISS - Fetching block from memory at blockAddress: " + blockAddress);
             byte[] fetched = memory.fetchBlock(blockAddress, config.getBlockSizeBytes());
             blocks.put(blockAddress, fetched);
+            System.out.println("[CACHE] Block stored in cache. Cache now contains blocks: " + blocks.keySet());
+        } else {
+            System.out.println("[CACHE] HIT - Block already in cache");
         }
         byte[] block = blocks.get(blockAddress);
         int offset = address % config.getBlockSizeBytes();
@@ -93,6 +100,7 @@ public class DataCache {
     }
     
     public Map<Integer, byte[]> getBlocks() {
+        System.out.println("[CACHE] getBlocks() called - Current cache contains: " + blocks.keySet());
         return new HashMap<>(blocks);
     }
     

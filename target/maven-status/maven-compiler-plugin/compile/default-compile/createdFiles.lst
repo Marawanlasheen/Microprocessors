@@ -1,5 +1,4 @@
 com\example\tomasulo\core\TomasuloCore.class
-com\example\App$AddressClashRow.class
 com\example\Main.class
 com\example\tomasulo\core\HazardType.class
 com\example\tomasulo\memory\Memory.class

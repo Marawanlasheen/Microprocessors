@@ -21,10 +21,14 @@ public class Memory {
 
     public void initWord(int address, int value) {
         // store 4 bytes little endian simplified
+        System.out.println("[MEMORY] initWord - Address: " + address + ", Value: " + value);
         mem[address] = (byte)(value & 0xFF);
         mem[address+1] = (byte)((value >> 8) & 0xFF);
         mem[address+2] = (byte)((value >> 16) & 0xFF);
         mem[address+3] = (byte)((value >> 24) & 0xFF);
+        System.out.println("[MEMORY] Wrote bytes at [" + address + "-" + (address+3) + "]: " + 
+            String.format("%02X %02X %02X %02X", mem[address] & 0xFF, mem[address+1] & 0xFF, 
+                         mem[address+2] & 0xFF, mem[address+3] & 0xFF));
     }
 
     public int loadWordRaw(int address) {

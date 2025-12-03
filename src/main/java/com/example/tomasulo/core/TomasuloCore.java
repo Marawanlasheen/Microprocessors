@@ -152,7 +152,7 @@ public class TomasuloCore {
             case ADD, SUB, ADD_D, SUB_D, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
             case MUL, MUL_D -> { return config.getLatencyConfig().getMulLatency(); }
             case DIV, DIV_D -> { return config.getLatencyConfig().getDivLatency(); }
-            case LW, LD, L_S, L_D -> { return config.getCacheConfig().getHitLatency(); }
+            case LW, LD, L_S, L_D -> { return config.getLatencyConfig().getLoadLatency(); }
             case SW, SD, S_S, S_D -> { return config.getLatencyConfig().getStoreLatency(); }
             case BEQ, BNE -> { return config.getLatencyConfig().getBranchLatency(); }
         }
@@ -292,22 +292,29 @@ public class TomasuloCore {
                 if (!srcJReady || !srcKReady) continue;
             }
 
-            // Apply cache miss penalty on first execution step for LOAD ops only
+            // Apply cache latency on first execution step for LOAD ops only
             // Stores use the configured store latency instead
             if (op.isLoad() && !e.isCacheLatencyApplied()) {
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 e.setEffectiveAddress(addr);
+                System.out.println("[EXECUTE] LOAD " + e.getName() + " - Base: " + base + ", Offset: " + e.getAddress() + ", Effective Address: " + addr);
                 boolean hit = dataCache.isHit(addr);
-                // On cache hit: complete immediately (set to 0 so it completes this cycle)
-                // On cache miss: add miss penalty to hit latency and fetch block into cache now
+                // On cache hit: add hit latency cycles
+                // On cache miss: add hit latency + miss penalty cycles, then fetch block into cache
                 if (hit) {
-                    e.setRemainingCycles(0); // Complete immediately on hit
+                    System.out.println("[EXECUTE] Cache HIT - Adding hit latency: " + config.getCacheConfig().getHitLatency());
+                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getHitLatency());
                 } else {
-                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getMissPenalty());
-                    // Pre-fetch the block into cache so subsequent accesses to same block are hits
-                    dataCache.loadWord(addr, memory);
+                    System.out.println("[EXECUTE] Cache MISS - Adding hit latency + miss penalty: " + (config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty()));
+                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty());
                 }
+                // Fetch the data from cache (will load block on miss if not already loaded)
+                // Cache this data in the reservation station to avoid fetching again in computeResult
+                System.out.println("[EXECUTE] Fetching data from cache for address: " + addr);
+                byte[] word = dataCache.loadWord(addr, memory);
+                e.setLoadedData(word);
+                System.out.println("[EXECUTE] Data cached in reservation station " + e.getName());
                 e.setCacheLatencyApplied(true);
             } else if (op.isStore() && !e.isCacheLatencyApplied()) {
                 // For stores, just compute effective address (no cache penalty)
@@ -427,15 +434,27 @@ public class TomasuloCore {
             case MUL, MUL_D -> { return vj * vk; }
             case DIV, DIV_D -> { return vk == 0 ? 0 : vj / vk; }
             case LW, LD, L_S, L_D -> {
-                // Compute effective address
-                int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
-                int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
-                byte[] word = dataCache.loadWord(addr, memory);
+                // Use the cached data that was loaded during execute phase
+                // This avoids redundant cache/memory access
+                System.out.println("[COMPUTE] LOAD - Getting cached data from reservation station " + e.getName());
+                byte[] word = e.getLoadedData();
+                if (word == null) {
+                    // Fallback: should not happen if execute phase worked correctly
+                    System.out.println("[COMPUTE] WARNING: LoadedData is null! Fetching from cache (this shouldn't happen)");
+                    int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
+                    int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
+                    System.out.println("[COMPUTE] Fallback address: " + addr);
+                    word = dataCache.loadWord(addr, memory);
+                } else {
+                    System.out.println("[COMPUTE] Using cached data - no cache access needed");
+                }
                 int b0 = Byte.toUnsignedInt(word[0]);
                 int b1 = Byte.toUnsignedInt(word[1]);
                 int b2 = Byte.toUnsignedInt(word[2]);
                 int b3 = Byte.toUnsignedInt(word[3]);
-                return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+                int result = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+                System.out.println("[COMPUTE] LOAD result: " + result);
+                return result;
             }
             case SW, SD, S_S, S_D -> {
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
