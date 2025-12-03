@@ -381,16 +381,10 @@ public class TomasuloCore {
                 }
                 
                 if (op.isStore()) {
-                    // perform store, free station; no CDB publish
-                    computeResult(e); // side-effect store
-                    e.setBusy(false);
-                    e.setResultReady(false);
-                    e.setResultValue(null);
-                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
-                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
-                        instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
-                    }
+                    // Mark store as ready for write-back (will be performed in next cycle)
+                    e.setResultValue(0); // dummy value for stores
+                    e.setResultReady(true);
+                    // Store will be performed in write-back phase, then station freed
                     continue;
                 }
                 int result = computeResult(e);
@@ -475,6 +469,28 @@ public class TomasuloCore {
     }
 
     private void writeBackPhase() {
+        // First, handle stores that are ready to write back (completed execution)
+        for (ReservationStationEntry e : stations.busyEntries()) {
+            if (e.getOpcode() != null && e.getOpcode().isStore() && e.isResultReady()) {
+                // Perform the actual store operation
+                computeResult(e); // side-effect: writes to memory/cache
+                System.out.println("[DEBUG] Store instruction " + e.getName() + " completed write-back to memory.");
+                
+                // Free the reservation station
+                e.setBusy(false);
+                e.setResultReady(false);
+                e.setResultValue(null);
+                
+                // Mark as committed
+                if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                    instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                    instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
+                    instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
+                }
+            }
+        }
+        
+        // Then handle CDB arbitration for non-store instructions
         CommonDataBus.CdbResult res = cdb.arbitrate();
         if (res == null) return;
         System.out.println("[DEBUG] CDB publishing: tag=" + res.tag + ", value=" + res.value);
