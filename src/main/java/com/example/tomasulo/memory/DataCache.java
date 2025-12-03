@@ -91,4 +91,12 @@ public class DataCache {
     private int blockAddress(int address) {
         return address - (address % config.getBlockSizeBytes());
     }
+    
+    public Map<Integer, byte[]> getBlocks() {
+        return new HashMap<>(blocks);
+    }
+    
+    public CacheConfig getConfig() {
+        return config;
+    }
 }

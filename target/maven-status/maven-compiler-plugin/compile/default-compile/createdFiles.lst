@@ -6,6 +6,7 @@ com\example\tomasulo\memory\Memory.class
 com\example\tomasulo\model\RegisterFile.class
 com\example\tomasulo\core\CycleSnapshot.class
 com\example\tomasulo\core\HazardRecord.class
+com\example\App$CacheRow.class
 com\example\App.class
 com\example\tomasulo\model\Opcode.class
 com\example\tomasulo\core\CommonDataBus$CdbResult.class

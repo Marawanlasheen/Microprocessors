@@ -76,6 +76,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
     private final ObservableList<RegRow> intRegRows = FXCollections.observableArrayList();
     private final ObservableList<RegRow> floatRegRows = FXCollections.observableArrayList();
     private final ObservableList<InstructionRow> instrRows = FXCollections.observableArrayList();
+    private final ObservableList<CacheRow> cacheRows = FXCollections.observableArrayList();
     private final TextArea programArea = new TextArea();
     private final Label cycleLabel = new Label("Cycle: 0");
 
@@ -148,6 +149,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         TableView<RegRow> intRegTable = buildRegTable("Integer Registers");
         TableView<RegRow> floatRegTable = buildRegTable("Float Registers");
         TableView<InstructionRow> instrTable = buildInstrTable();
+        TableView<CacheRow> cacheTable = buildCacheTable();
 
         // Register tables side by side under program area
         VBox programBox = new VBox(4, new Label("Program"), programArea);
@@ -166,6 +168,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
 
         VBox right = new VBox(8, new Label("Reservation Stations"), stationTable,
             new Label("Instruction Queue"), instrTable,
+            new Label("Data Cache"), cacheTable,
             new Label("Address Clashes"), addressClashTable);
         right.setPadding(new Insets(8));
 
@@ -185,7 +188,7 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         run10Btn.setOnAction(e -> { for (int i = 0; i < 10; i++) doStep(); });
         resetBtn.setOnAction(e -> { initCoreWithDefaults(); refreshTables(); });
 
-        stage.setScene(new Scene(root, 1100, 650));
+        stage.setScene(new Scene(root, 1200, 800));
         stage.show();
     }
 
@@ -217,11 +220,19 @@ private int userStoreLatency = 1;    private TomasuloCore core;
         
         // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(100, 0);  // Memory[100] for L.D F6, 0(R2) where R2=100
-        memory.initWord(120, 0);  // Memory[120] for L.D F2, 20(R2) where R2=100
+        memory.initWord(100, 10);  // Memory[100] for L.D F6, 0(R2) where R2=100
+        memory.initWord(120, 25);  // Memory[120] for L.D F2, 20(R2) where R2=100
         System.out.println("[CONFIG] Memory Preloaded:");
         System.out.println("[CONFIG]   Address 100: " + memory.loadWordRaw(100));
         System.out.println("[CONFIG]   Address 120: " + memory.loadWordRaw(120));
+        System.out.println("[CONFIG] With these values, your test program should compute:");
+        System.out.println("[CONFIG]   F6 = 10 (from address 100)");
+        System.out.println("[CONFIG]   F2 = 25 (from address 120)");
+        System.out.println("[CONFIG]   F7 = F1 + F3 = 2 + 3 = 5");
+        System.out.println("[CONFIG]   F0 = F2 * F4 = 25 * 5 = 125");
+        System.out.println("[CONFIG]   F8 = F2 - F6 = 25 - 10 = 15");
+        System.out.println("[CONFIG]   F10 = F0 / F6 = 125 / 10 = 12");
+        System.out.println("[CONFIG]   Memory[100] = F10 = 12 (after S.D)");
     }
 
     private TableView<StationState> buildStationTable() {
@@ -329,6 +340,27 @@ private int userStoreLatency = 1;    private TomasuloCore core;
             instrRows.add(new InstructionRow(is.getPcIndex(), is.getText(), is.getStage().name(), 
                 is.getIssueCycle(), is.getExecuteStartCycle(), is.getExecuteEndCycle(), is.getCommitCycle()));
         }
+        // Cache
+        cacheRows.clear();
+        if (core != null) {
+            java.util.Map<Integer, byte[]> cacheBlocks = core.getDataCache().getBlocks();
+            int blockSize = core.getDataCache().getConfig().getBlockSizeBytes();
+            int cacheSize = core.getDataCache().getConfig().getCacheSizeBytes();
+            int numSlots = cacheSize / blockSize;
+            
+            for (java.util.Map.Entry<Integer, byte[]> entry : cacheBlocks.entrySet()) {
+                int blockAddress = entry.getKey();
+                int cacheSlot = (blockAddress / blockSize) % numSlots;
+                
+                StringBuilder hex = new StringBuilder();
+                for (byte b : entry.getValue()) {
+                    hex.append(String.format("%02X ", b & 0xFF));
+                }
+                cacheRows.add(new CacheRow(cacheSlot, blockAddress, hex.toString().trim()));
+            }
+            // Sort by cache slot number
+            cacheRows.sort((a, b) -> Integer.compare(a.cacheSlot, b.cacheSlot));
+        }
     }
 
     private static int regCompare(String a, String b) {
@@ -403,6 +435,35 @@ private int userStoreLatency = 1;    private TomasuloCore core;
             this.executeEndCycle = executeEndCycle;
             this.commitCycle = commitCycle;
         }
+    }
+
+    public static class CacheRow {
+        public final int cacheSlot;
+        public final int blockAddress;
+        public final String data;
+        public CacheRow(int cacheSlot, int blockAddress, String data) {
+            this.cacheSlot = cacheSlot;
+            this.blockAddress = blockAddress;
+            this.data = data;
+        }
+    }
+
+    private TableView<CacheRow> buildCacheTable() {
+        TableView<CacheRow> tv = new TableView<>(cacheRows);
+        TableColumn<CacheRow, Number> cSlot = new TableColumn<>("Cache Slot");
+        cSlot.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().cacheSlot));
+        TableColumn<CacheRow, Number> cBlock = new TableColumn<>("Memory Block Addr");
+        cBlock.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().blockAddress));
+        TableColumn<CacheRow, String> cData = new TableColumn<>("Data (Hex)");
+        cData.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().data));
+        tv.getColumns().add(cSlot);
+        tv.getColumns().add(cBlock);
+        tv.getColumns().add(cData);
+        cSlot.setPrefWidth(80);
+        cBlock.setPrefWidth(130);
+        cData.setPrefWidth(280);
+        tv.setPrefHeight(200);
+        return tv;
     }
 
     public static void main(String[] args) {

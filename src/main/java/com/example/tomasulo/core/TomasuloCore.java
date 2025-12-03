@@ -531,4 +531,5 @@ public class TomasuloCore {
     public RegisterFile getFloatRegisters() { return floatRegisters; }
     public List<HazardRecord> getHazardLog() { return hazardLog; }
     public Memory getMemory() { return memory; }
+    public DataCache getDataCache() { return dataCache; }
 }
