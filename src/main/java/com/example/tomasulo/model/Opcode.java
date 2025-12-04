@@ -2,7 +2,8 @@ package com.example.tomasulo.model;
 
 public enum Opcode {
     ADD, SUB, MUL, DIV, // floating point assumed same latency categories
-    ADD_D, SUB_D, MUL_D, DIV_D, // floating point .D variants
+    ADD_D, SUB_D, MUL_D, DIV_D, // floating point .D variants (double precision)
+    ADD_S, SUB_S, MUL_S, DIV_S, // floating point .S variants (single precision)
     ADDI, SUBI, DADDI, DSUBI, // integer immediate (32/64-bit)
     LW, LD, L_S, L_D,
     SW, SD, S_S, S_D,
@@ -16,6 +17,6 @@ public enum Opcode {
     }
     public boolean isBranch() { return this == BEQ || this == BNE; }
     public boolean isInteger() { return this == ADDI || this == SUBI || this == DADDI || this == DSUBI; }
-    public boolean isFPAddGroup() { return this == ADD || this == SUB || this == ADD_D || this == SUB_D; }
-    public boolean isFPMulGroup() { return this == MUL || this == DIV || this == MUL_D || this == DIV_D; }
+    public boolean isFPAddGroup() { return this == ADD || this == SUB || this == ADD_D || this == SUB_D || this == ADD_S || this == SUB_S; }
+    public boolean isFPMulGroup() { return this == MUL || this == DIV || this == MUL_D || this == DIV_D || this == MUL_S || this == DIV_S; }
 }

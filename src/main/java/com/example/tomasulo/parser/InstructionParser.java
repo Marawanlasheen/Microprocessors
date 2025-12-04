@@ -37,6 +37,10 @@ public class InstructionParser {
                 .replaceFirst("^(?i)sub\\.d", "SUB_D")
                 .replaceFirst("^(?i)mul\\.d", "MUL_D")
                 .replaceFirst("^(?i)div\\.d", "DIV_D")
+                .replaceFirst("^(?i)add\\.s", "ADD_S")
+                .replaceFirst("^(?i)sub\\.s", "SUB_S")
+                .replaceFirst("^(?i)mul\\.s", "MUL_S")
+                .replaceFirst("^(?i)div\\.s", "DIV_S")
                 .replaceFirst("^(?i)daddi", "DADDI")
                 .replaceFirst("^(?i)dsubi", "DSUBI");
             String[] parts = normalized.replace(",", " ").replace("(", " ").replace(")", " ").split("\\s+");
@@ -63,7 +67,7 @@ public class InstructionParser {
         String dest = null, src1 = null, src2 = null;
         Integer imm = null; Integer offset = null;
         switch (opcode) {
-            case ADD, SUB, MUL, DIV, ADD_D, SUB_D, MUL_D, DIV_D -> { dest = parts[1]; src1 = parts[2]; src2 = parts[3]; }
+            case ADD, SUB, MUL, DIV, ADD_D, SUB_D, MUL_D, DIV_D, ADD_S, SUB_S, MUL_S, DIV_S -> { dest = parts[1]; src1 = parts[2]; src2 = parts[3]; }
             case ADDI, SUBI, DADDI, DSUBI -> { dest = parts[1]; src1 = parts[2]; imm = Integer.parseInt(parts[3]); }
             case LW, LD, L_S, L_D -> { dest = parts[1]; offset = Integer.parseInt(parts[2]); src1 = parts[3]; }
             case SW, SD, S_S, S_D -> { src1 = parts[1]; offset = Integer.parseInt(parts[2]); src2 = parts[3]; }

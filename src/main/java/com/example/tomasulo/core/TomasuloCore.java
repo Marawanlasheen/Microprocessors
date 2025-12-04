@@ -261,9 +261,9 @@ public class TomasuloCore {
 
     private int latencyFor(Opcode opcode) {
         switch (opcode) {
-            case ADD, SUB, ADD_D, SUB_D, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
-            case MUL, MUL_D -> { return config.getLatencyConfig().getMulLatency(); }
-            case DIV, DIV_D -> { return config.getLatencyConfig().getDivLatency(); }
+            case ADD, SUB, ADD_D, SUB_D, ADD_S, SUB_S, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
+            case MUL, MUL_D, MUL_S -> { return config.getLatencyConfig().getMulLatency(); }
+            case DIV, DIV_D, DIV_S -> { return config.getLatencyConfig().getDivLatency(); }
             case LW, LD, L_S, L_D -> { return config.getLatencyConfig().getLoadLatency(); }
             case SW, SD, S_S, S_D -> { return config.getLatencyConfig().getStoreLatency(); }
             case BEQ, BNE -> { return config.getLatencyConfig().getBranchLatency(); }
@@ -537,12 +537,12 @@ public class TomasuloCore {
         if (e.getVk() != null) vk = Integer.parseInt(e.getVk());
         if (op == null) return 0;
         switch (op) {
-            case ADD, ADD_D, DADDI -> { return vj + vk; }
+            case ADD, ADD_D, ADD_S, DADDI -> { return vj + vk; }
             case ADDI -> { return vj + (e.getImmediate() != null ? e.getImmediate() : vk); }
-            case SUB, SUB_D, DSUBI -> { return vj - vk; }
+            case SUB, SUB_D, SUB_S, DSUBI -> { return vj - vk; }
             case SUBI -> { return vj - (e.getImmediate() != null ? e.getImmediate() : vk); }
-            case MUL, MUL_D -> { return vj * vk; }
-            case DIV, DIV_D -> { return vk == 0 ? 0 : vj / vk; }
+            case MUL, MUL_D, MUL_S -> { return vj * vk; }
+            case DIV, DIV_D, DIV_S -> { return vk == 0 ? 0 : vj / vk; }
             case LW, LD, L_S, L_D -> {
                 // Use the cached FULL BLOCK that was loaded during execute phase
                 // This avoids redundant cache/memory access
