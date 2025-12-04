@@ -15,7 +15,7 @@ public enum Opcode {
         return this == SW || this == SD || this == S_S || this == S_D;
     }
     public boolean isBranch() { return this == BEQ || this == BNE; }
-    public boolean isInteger() { return this == ADDI || this == SUBI; }
+    public boolean isInteger() { return this == ADDI || this == SUBI || this == DADDI || this == DSUBI; }
     public boolean isFPAddGroup() { return this == ADD || this == SUB || this == ADD_D || this == SUB_D; }
     public boolean isFPMulGroup() { return this == MUL || this == DIV || this == MUL_D || this == DIV_D; }
 }
