@@ -23,6 +23,7 @@ public class TomasuloCore {
     private int pcIndex = 0;
     private int cycle = 0;
     private final List<HazardRecord> hazardLog = new ArrayList<>();
+    private final java.util.Set<Integer> committedThisCycle = new java.util.HashSet<>();
 
     public TomasuloCore(SimulationConfig config, int memorySizeBytes) {
         this.config = config;
@@ -86,6 +87,8 @@ public class TomasuloCore {
     public void stepCycle() {
         cycle++;
         System.out.println("\n[DEBUG] ===== Cycle " + cycle + " =====");
+        // Clear committedThisCycle from previous cycle
+        committedThisCycle.clear();
         // Clear freedThisCycle flags from previous cycle
         for (ReservationStationEntry e : stations.all()) {
             e.setFreedThisCycle(false);
@@ -124,6 +127,111 @@ public class TomasuloCore {
         boolean unresolvedBranch = stations.busyEntries().stream().anyMatch(e -> e.getType() == ReservationStationType.BRANCH);
         if (unresolvedBranch) return;
         Instruction inst = program.get(pcIndex);
+        
+        // Address clash check: prevent issuing load/store if there's a pending load/store to the same address
+        if (inst.getOpcode().isLoad() || inst.getOpcode().isStore()) {
+            // Calculate the effective address for the current instruction
+            String base = inst.getOpcode().isStore() ? inst.getSrc2() : inst.getSrc1();
+            Integer offset = inst.getOffset() != null ? inst.getOffset() : 0;
+            
+            if (base != null) {
+                RegisterFile rf = base.startsWith("F") ? floatRegisters : intRegisters;
+                // Only check if base register is ready (not pending)
+                if (!rf.isPending(base)) {
+                    int baseValue = rf.getValue(base);
+                    int effectiveAddress = baseValue + offset;
+                    
+                    // Check all busy load/store stations AND recently committed ones for address clash
+                    // Note: Load after Load to same address is NOT a clash
+                    for (ReservationStationEntry e : stations.busyEntries()) {
+                        if (e.getOpcode() != null && (e.getOpcode().isLoad() || e.getOpcode().isStore())) {
+                            // Check if this is Load-after-Load (allowed, not a clash)
+                            boolean currentIsLoad = inst.getOpcode().isLoad();
+                            boolean otherIsLoad = e.getOpcode().isLoad();
+                            
+                            // Check if the earlier instruction has the same address
+                            Integer otherAddr = e.getEffectiveAddress();
+                            if (otherAddr != null && otherAddr == effectiveAddress) {
+                                // Skip if both are loads (no clash)
+                                if (currentIsLoad && otherIsLoad) {
+                                    continue;
+                                }
+                                
+                                System.out.println("[DEBUG] Cannot issue instruction at PC " + pcIndex + ": " + inst.getRawText() + 
+                                    " (address clash with " + e.getName() + " at address " + effectiveAddress + ")");
+                                hazardLog.add(new HazardRecord(HazardType.ADDRESS_CLASH, e.getName(), "PC" + pcIndex, "Addr:" + effectiveAddress, cycle));
+                                // Mark instruction as stalled
+                                if (pcIndex < instStages.size()) {
+                                    instStages.set(pcIndex, InstructionStatus.Stage.STALLED);
+                                    instructionStatuses.get(pcIndex).setStage(InstructionStatus.Stage.STALLED);
+                                }
+                                return; // stall due to address clash
+                            }
+                            // Also check if base is ready but address not computed yet
+                            if (otherAddr == null && e.getQj() == null && e.getVj() != null) {
+                                int otherBase = Integer.parseInt(e.getVj());
+                                int otherOffset = e.getAddress() != null ? e.getAddress() : 0;
+                                int otherEffectiveAddr = otherBase + otherOffset;
+                                if (otherEffectiveAddr == effectiveAddress) {
+                                    // Skip if both are loads (no clash)
+                                    if (currentIsLoad && otherIsLoad) {
+                                        continue;
+                                    }
+                                    
+                                    System.out.println("[DEBUG] Cannot issue instruction at PC " + pcIndex + ": " + inst.getRawText() + 
+                                        " (address clash with " + e.getName() + " at address " + effectiveAddress + ")");
+                                    hazardLog.add(new HazardRecord(HazardType.ADDRESS_CLASH, e.getName(), "PC" + pcIndex, "Addr:" + effectiveAddress, cycle));
+                                    // Mark instruction as stalled
+                                    if (pcIndex < instStages.size()) {
+                                        instStages.set(pcIndex, InstructionStatus.Stage.STALLED);
+                                        instructionStatuses.get(pcIndex).setStage(InstructionStatus.Stage.STALLED);
+                                    }
+                                    return; // stall due to address clash
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Also check if any previous load/store to same address has NOT reached COMMITTED yet
+                    // OR was committed in this very cycle (must wait until next cycle)
+                    // Note: Load after Load to same address is NOT an address clash (loads don't modify memory)
+                    for (int i = 0; i < pcIndex; i++) {
+                        if (i < program.size() && i < instStages.size()) {
+                            Instruction prevInst = program.get(i);
+                            if (prevInst.getOpcode().isLoad() || prevInst.getOpcode().isStore()) {
+                                // Calculate previous instruction's address
+                                String prevBase = prevInst.getOpcode().isStore() ? prevInst.getSrc2() : prevInst.getSrc1();
+                                Integer prevOffset = prevInst.getOffset() != null ? prevInst.getOffset() : 0;
+                                if (prevBase != null && prevBase.equals(base) && prevOffset.equals(offset)) {
+                                    // Check if this is a Load-after-Load case (not an address clash)
+                                    boolean currentIsLoad = inst.getOpcode().isLoad();
+                                    boolean previousIsLoad = prevInst.getOpcode().isLoad();
+                                    if (currentIsLoad && previousIsLoad) {
+                                        // Load after Load to same address is allowed - no clash
+                                        continue;
+                                    }
+                                    
+                                    // Address clash: Store after Load, Load after Store, or Store after Store
+                                    // Same base and offset - check if committed AND not in this cycle
+                                    if (instStages.get(i) != InstructionStatus.Stage.COMMITTED || committedThisCycle.contains(i)) {
+                                        System.out.println("[DEBUG] Cannot issue instruction at PC " + pcIndex + ": " + inst.getRawText() + 
+                                            " (waiting for previous instruction at PC " + i + " to commit in previous cycle)");
+                                        hazardLog.add(new HazardRecord(HazardType.ADDRESS_CLASH, "PC" + i, "PC" + pcIndex, "Addr:" + effectiveAddress, cycle));
+                                        // Mark instruction as stalled
+                                        if (pcIndex < instStages.size()) {
+                                            instStages.set(pcIndex, InstructionStatus.Stage.STALLED);
+                                            instructionStatuses.get(pcIndex).setStage(InstructionStatus.Stage.STALLED);
+                                        }
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         ReservationStationEntry entry = mapInstructionToStation(inst);
         if (entry == null) {
             System.out.println("[DEBUG] Cannot issue instruction at PC " + pcIndex + ": " + inst.getRawText() + " (no free reservation station of required type)");
@@ -412,6 +520,7 @@ public class TomasuloCore {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
                         instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
                         instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
+                        committedThisCycle.add(e.getInstructionIndex()); // Track commit this cycle
                     }
                 } else {
                     cdb.requestPublish(e.getName(), e.getResultValue());
@@ -494,6 +603,7 @@ public class TomasuloCore {
                     instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
                     instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
                     instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
+                    committedThisCycle.add(e.getInstructionIndex()); // Track commit this cycle
                 }
             }
         }
@@ -520,6 +630,7 @@ public class TomasuloCore {
                         instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
                         instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
                         instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
+                        committedThisCycle.add(e.getInstructionIndex()); // Track commit this cycle
                     }
                 }
             }

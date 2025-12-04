@@ -1,7 +1,7 @@
 package com.example.tomasulo.core;
 
 public class InstructionStatus {
-    public enum Stage { QUEUED, ISSUED, EXECUTING, WRITTEN, COMMITTED }
+    public enum Stage { QUEUED, STALLED, ISSUED, EXECUTING, WRITTEN, COMMITTED }
     private final int pcIndex;
     private final String text;
     private Stage stage;
