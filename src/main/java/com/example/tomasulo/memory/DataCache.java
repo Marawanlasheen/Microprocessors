@@ -101,6 +101,33 @@ public class DataCache {
         }
     }
     
+    /**
+     * Load the entire cache block starting from the given address.
+     * This returns the full block data (not just 4 bytes).
+     * @param address Starting address of the block
+     * @param memory Memory to fetch from on cache miss
+     * @return Full block data
+     */
+    public byte[] loadBlock(int address, Memory memory) {
+        int blockAddress = address;
+        System.out.println("[CACHE] loadBlock called - Address: " + address + ", BlockAddress: " + blockAddress);
+        if (!blocks.containsKey(blockAddress)) {
+            // miss: fetch full block starting from the effective address
+            System.out.println("[CACHE] MISS - Fetching full block from memory starting at effective address: " + blockAddress);
+            byte[] fetched = memory.fetchBlock(blockAddress, config.getBlockSizeBytes());
+            blocks.put(blockAddress, fetched);
+            System.out.println("[CACHE] Block stored in cache. Cache now contains blocks: " + blocks.keySet());
+        } else {
+            System.out.println("[CACHE] HIT - Block already in cache");
+        }
+        
+        // Return a copy of the entire block
+        byte[] block = blocks.get(blockAddress);
+        byte[] result = new byte[block.length];
+        System.arraycopy(block, 0, result, 0, block.length);
+        return result;
+    }
+
     public Map<Integer, byte[]> getBlocks() {
         System.out.println("[CACHE] getBlocks() called - Current cache contains: " + blocks.keySet());
         return new HashMap<>(blocks);

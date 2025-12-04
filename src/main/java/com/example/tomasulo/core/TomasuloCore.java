@@ -423,12 +423,12 @@ public class TomasuloCore {
                     System.out.println("[EXECUTE] Cache MISS - Adding hit latency + miss penalty: " + (config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty()));
                     e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty());
                 }
-                // Fetch the data from cache (will load block on miss if not already loaded)
-                // Cache this data in the reservation station to avoid fetching again in computeResult
-                System.out.println("[EXECUTE] Fetching data from cache for address: " + addr);
-                byte[] word = dataCache.loadWord(addr, memory);
-                e.setLoadedData(word);
-                System.out.println("[EXECUTE] Data cached in reservation station " + e.getName());
+                // Fetch the ENTIRE BLOCK from cache (will load block on miss if not already loaded)
+                // Cache the full block in the reservation station to avoid fetching again in computeResult
+                System.out.println("[EXECUTE] Fetching entire block from cache for address: " + addr);
+                byte[] block = dataCache.loadBlock(addr, memory);
+                e.setLoadedData(block);
+                System.out.println("[EXECUTE] Full block (size: " + block.length + " bytes) cached in reservation station " + e.getName());
                 e.setCacheLatencyApplied(true);
             } else if (op.isStore() && !e.isCacheLatencyApplied()) {
                 // For stores, just compute effective address (no cache penalty)
@@ -544,37 +544,64 @@ public class TomasuloCore {
             case MUL, MUL_D -> { return vj * vk; }
             case DIV, DIV_D -> { return vk == 0 ? 0 : vj / vk; }
             case LW, LD, L_S, L_D -> {
-                // Use the cached data that was loaded during execute phase
+                // Use the cached FULL BLOCK that was loaded during execute phase
                 // This avoids redundant cache/memory access
-                System.out.println("[COMPUTE] LOAD - Getting cached data from reservation station " + e.getName());
-                byte[] word = e.getLoadedData();
-                if (word == null) {
+                System.out.println("[COMPUTE] LOAD - Getting cached block from reservation station " + e.getName());
+                byte[] block = e.getLoadedData();
+                if (block == null) {
                     // Fallback: should not happen if execute phase worked correctly
                     System.out.println("[COMPUTE] WARNING: LoadedData is null! Fetching from cache (this shouldn't happen)");
                     int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                     int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                     System.out.println("[COMPUTE] Fallback address: " + addr);
-                    word = dataCache.loadWord(addr, memory);
+                    block = dataCache.loadBlock(addr, memory);
                 } else {
-                    System.out.println("[COMPUTE] Using cached data - no cache access needed");
+                    System.out.println("[COMPUTE] Using cached block (size: " + block.length + " bytes) - no cache access needed");
                 }
-                int b0 = Byte.toUnsignedInt(word[0]);
-                int b1 = Byte.toUnsignedInt(word[1]);
-                int b2 = Byte.toUnsignedInt(word[2]);
-                int b3 = Byte.toUnsignedInt(word[3]);
-                int result = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-                System.out.println("[COMPUTE] LOAD result: " + result);
+                
+                // Convert entire block to integer with REVERSED byte order
+                // For addresses 0-7: address 7 is LSB, address 0 is MSB
+                // This means we read bytes in reverse order
+                int result = 0;
+                for (int i = 0; i < block.length && i < 4; i++) {
+                    // Reverse: last byte (highest address) becomes LSB
+                    int byteIdx = block.length - 1 - i;
+                    int byteVal = Byte.toUnsignedInt(block[byteIdx]);
+                    result |= (byteVal << (i * 8));
+                }
+                
+                System.out.println("[COMPUTE] LOAD result from block (reversed byte order): " + result);
+                System.out.print("[COMPUTE] Block bytes (address order): ");
+                for (int i = 0; i < block.length; i++) {
+                    System.out.print(String.format("%02X ", block[i] & 0xFF));
+                }
+                System.out.println();
                 return result;
             }
             case SW, SD, S_S, S_D -> {
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 int value = (e.getVk() != null) ? Integer.parseInt(e.getVk()) : 0;
-                byte[] data = new byte[4];
-                data[0] = (byte)(value & 0xFF);
-                data[1] = (byte)((value >> 8) & 0xFF);
-                data[2] = (byte)((value >> 16) & 0xFF);
-                data[3] = (byte)((value >> 24) & 0xFF);
+                
+                // Store with REVERSED byte order - highest address gets LSB
+                // For addresses 0-7: address 7 = LSB, address 0 = MSB
+                int blockSize = config.getCacheConfig().getBlockSizeBytes();
+                byte[] data = new byte[Math.min(blockSize, 4)]; // Store up to 4 bytes or block size
+                
+                // Reverse byte order when storing
+                for (int i = 0; i < data.length; i++) {
+                    // LSB goes to highest address (last position)
+                    int byteIdx = data.length - 1 - i;
+                    data[byteIdx] = (byte)((value >> (i * 8)) & 0xFF);
+                }
+                
+                System.out.println("[COMPUTE] STORE - Address: " + addr + ", Value: " + value);
+                System.out.print("[COMPUTE] Storing bytes (reversed order): ");
+                for (int i = 0; i < data.length; i++) {
+                    System.out.print(String.format("%02X ", data[i] & 0xFF));
+                }
+                System.out.println();
+                
                 dataCache.storeWord(addr, data, memory);
                 return 0; // stores do not publish meaningful value
             }
