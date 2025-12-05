@@ -20,31 +20,31 @@ public class Memory {
     }
 
     public void initWord(int address, int value) {
-        // store 4 bytes little endian simplified
+        // store 4 bytes big endian
         System.out.println("[MEMORY] initWord - Address: " + address + ", Value: " + value);
-        mem[address] = (byte)(value & 0xFF);
-        mem[address+1] = (byte)((value >> 8) & 0xFF);
-        mem[address+2] = (byte)((value >> 16) & 0xFF);
-        mem[address+3] = (byte)((value >> 24) & 0xFF);
+        mem[address] = (byte)((value >> 24) & 0xFF);
+        mem[address+1] = (byte)((value >> 16) & 0xFF);
+        mem[address+2] = (byte)((value >> 8) & 0xFF);
+        mem[address+3] = (byte)(value & 0xFF);
         System.out.println("[MEMORY] Wrote bytes at [" + address + "-" + (address+3) + "]: " + 
             String.format("%02X %02X %02X %02X", mem[address] & 0xFF, mem[address+1] & 0xFF, 
                          mem[address+2] & 0xFF, mem[address+3] & 0xFF));
     }
 
     public void initDoubleWord(int address, long value) {
-        // store 8 bytes little endian for L.D/S.D operations
+        // store 8 bytes big endian for L.D/S.D operations
         System.out.println("[MEMORY] initDoubleWord - Address: " + address + ", Value: " + value);
         for (int i = 0; i < 8; i++) {
-            mem[address + i] = (byte)((value >> (i * 8)) & 0xFF);
+            mem[address + i] = (byte)((value >> ((7 - i) * 8)) & 0xFF);
         }
         System.out.println("[MEMORY] Wrote 8 bytes at [" + address + "-" + (address+7) + "]");
     }
 
     public void storeDoubleWord(int address, long value) {
-        // store 8 bytes little endian for S.D operations at runtime
+        // store 8 bytes big endian for S.D operations at runtime
         System.out.println("[MEMORY] storeDoubleWord - Address: " + address + ", Value: " + value);
         for (int i = 0; i < 8; i++) {
-            mem[address + i] = (byte)((value >> (i * 8)) & 0xFF);
+            mem[address + i] = (byte)((value >> ((7 - i) * 8)) & 0xFF);
         }
     }
 
@@ -53,14 +53,14 @@ public class Memory {
         int b1 = Byte.toUnsignedInt(mem[address+1]);
         int b2 = Byte.toUnsignedInt(mem[address+2]);
         int b3 = Byte.toUnsignedInt(mem[address+3]);
-        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
     }
 
     public long loadDoubleWordRaw(int address) {
-        // load 8 bytes little endian for L.D/S.D operations
+        // load 8 bytes big endian for L.D/S.D operations
         long result = 0;
         for (int i = 0; i < 8; i++) {
-            result |= ((long)Byte.toUnsignedInt(mem[address + i])) << (i * 8);
+            result |= ((long)Byte.toUnsignedInt(mem[address + i])) << ((7 - i) * 8);
         }
         return result;
     }

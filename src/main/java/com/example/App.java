@@ -208,8 +208,8 @@ private int userLoadLatency = 2;
         
         // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(100, 1800000);  // Memory[100] = 1800000 (writes bytes at 100-103: 00 00 1B 0C)
-        memory.initWord(104, 5);   // Memory[104] = 5 (writes bytes at 104-107: 05 00 00 00)
+        memory.initWord(100, 1800000);  // Memory[100] = 1800000 (writes bytes at 100-103: 00 1B 77 40 in big-endian)
+        memory.initWord(104, 5);   // Memory[104] = 5 (writes bytes at 104-107: 00 00 00 05 in big-endian)
         memory.initWord(120, 25);  // Memory[120] for L.D F2, 20(R2) where R2=100
         System.out.println("[CONFIG] Memory Preloaded:");
         System.out.println("[CONFIG]   Address 100: " + memory.loadWordRaw(100));
