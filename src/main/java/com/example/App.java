@@ -108,6 +108,12 @@ private int userLoadLatency = 2;
         System.out.println("[CONFIG]   Cache Size: " + userCacheSize + " bytes");
         System.out.println("[CONFIG]   Hit Latency: " + userHitLatency + " cycles");
         System.out.println("[CONFIG]   Miss Penalty: " + userMissPenalty + " cycles");
+        
+        // Calculate register size based on cache block size
+        int registerSizeBytes = userBlockSize;
+        System.out.println("[CONFIG] Register Configuration:");
+        System.out.println("[CONFIG]   Register Size: " + registerSizeBytes + " bytes (matched to cache block size)");
+        System.out.println("[CONFIG]   This means each register can hold " + (registerSizeBytes / 4) + " 32-bit word(s)");
 
         // Controls
         Button loadBtn = new Button("Load Program");
@@ -165,7 +171,7 @@ private int userLoadLatency = 2;
         run10Btn.setOnAction(e -> { for (int i = 0; i < 10; i++) doStep(); });
         resetBtn.setOnAction(e -> { initCoreWithDefaults(); refreshTables(); });
 
-        stage.setScene(new Scene(root, 1400, 900));
+        stage.setScene(new Scene(root, 1200, 750));
         stage.show();
     }
 
@@ -190,7 +196,11 @@ private int userLoadLatency = 2;
             userStoreBuffers,
             userBranchStations
         );
-        SimulationConfig cfg = new SimulationConfig(lat, cache, sizes, 32, 32);
+        // Calculate number of registers based on cache block size
+        // For 4-byte block: 32 registers, for 8-byte block: 32 registers (keeping count same, size differs)
+        int registerCount = 32;
+        System.out.println("[CONFIG] Initializing " + registerCount + " integer and " + registerCount + " float registers");
+        SimulationConfig cfg = new SimulationConfig(lat, cache, sizes, registerCount, registerCount);
         core = new TomasuloCore(cfg, 4096);
         // Apply user register initialization
         userIntRegInit.forEach((reg, val) -> core.getIntRegisters().init(reg, val));
@@ -198,7 +208,7 @@ private int userLoadLatency = 2;
         
         // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(100, 10);  // Memory[100] = 10 (writes bytes at 100-103: 0A 00 00 00)
+        memory.initWord(100, 1800000);  // Memory[100] = 1800000 (writes bytes at 100-103: 00 00 1B 0C)
         memory.initWord(104, 5);   // Memory[104] = 5 (writes bytes at 104-107: 05 00 00 00)
         memory.initWord(120, 25);  // Memory[120] for L.D F2, 20(R2) where R2=100
         System.out.println("[CONFIG] Memory Preloaded:");

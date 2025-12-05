@@ -431,10 +431,24 @@ public class TomasuloCore {
                 System.out.println("[EXECUTE] Full block (size: " + block.length + " bytes) cached in reservation station " + e.getName());
                 e.setCacheLatencyApplied(true);
             } else if (op.isStore() && !e.isCacheLatencyApplied()) {
-                // For stores, just compute effective address (no cache penalty)
+                // For stores, compute effective address and apply cache latency like loads
                 int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
                 int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
                 e.setEffectiveAddress(addr);
+                System.out.println("[EXECUTE] STORE " + e.getName() + " - Base: " + base + ", Offset: " + e.getAddress() + ", Effective Address: " + addr);
+                boolean hit = dataCache.isHit(addr);
+                // On cache hit: add hit latency cycles
+                // On cache miss: add hit latency + miss penalty cycles, then fetch block into cache
+                if (hit) {
+                    System.out.println("[EXECUTE] Cache HIT - Adding hit latency: " + config.getCacheConfig().getHitLatency());
+                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getHitLatency());
+                } else {
+                    System.out.println("[EXECUTE] Cache MISS - Adding hit latency + miss penalty: " + (config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty()));
+                    e.setRemainingCycles(e.getRemainingCycles() + config.getCacheConfig().getHitLatency() + config.getCacheConfig().getMissPenalty());
+                    // Fetch the block into cache on miss (for write-allocate)
+                    System.out.println("[EXECUTE] Pre-fetching block into cache for store address: " + addr);
+                    dataCache.loadBlock(addr, memory);
+                }
                 e.setCacheLatencyApplied(true);
             }
 
