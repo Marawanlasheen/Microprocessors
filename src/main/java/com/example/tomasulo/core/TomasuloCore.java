@@ -521,22 +521,8 @@ public class TomasuloCore {
                 e.setResultValue(result);
                 e.setResultReady(true);
                 if (op.isBranch()) {
-                    // Resolve branch: adjust PC and free station (no CDB)
-                    if (result == 1) {
-                        int offset = (e.getImmediate() == null) ? 0 : e.getImmediate();
-                        pcIndex = pcIndex + offset;
-                        if (pcIndex < 0) pcIndex = 0;
-                        if (pcIndex > program.size()) pcIndex = program.size();
-                    }
-                    e.setBusy(false);
-                    e.setResultReady(false);
-                    e.setResultValue(null);
-                    if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
-                        instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
-                        instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
-                        instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
-                        committedThisCycle.add(e.getInstructionIndex()); // Track commit this cycle
-                    }
+                    // Branch execution complete - will commit in write-back phase next cycle
+                    // Don't free station or commit yet, let write-back handle it
                 } else {
                     cdb.requestPublish(e.getName(), e.getResultValue());
                 }
@@ -649,7 +635,38 @@ public class TomasuloCore {
     }
 
     private void writeBackPhase() {
-        // First, handle stores that are ready to write back (completed execution)
+        // First, handle branches that are ready to commit (completed execution)
+        for (ReservationStationEntry e : stations.busyEntries()) {
+            if (e.getOpcode() != null && e.getOpcode().isBranch() && e.isResultReady()) {
+                // Branch execution complete - now resolve and commit
+                long result = e.getResultValue();
+                if (result == 1) {
+                    int offset = (e.getImmediate() == null) ? 0 : e.getImmediate();
+                    pcIndex = pcIndex + offset;
+                    if (pcIndex < 0) pcIndex = 0;
+                    if (pcIndex > program.size()) pcIndex = program.size();
+                    System.out.println("[DEBUG] Branch " + e.getName() + " taken, PC updated to " + pcIndex);
+                } else {
+                    System.out.println("[DEBUG] Branch " + e.getName() + " not taken");
+                }
+                
+                // Free the reservation station
+                e.setBusy(false);
+                e.setFreedThisCycle(true);
+                e.setResultReady(false);
+                e.setResultValue(null);
+                
+                // Mark as committed
+                if (e.getInstructionIndex() != null && e.getInstructionIndex() < instStages.size()) {
+                    instStages.set(e.getInstructionIndex(), InstructionStatus.Stage.COMMITTED);
+                    instructionStatuses.get(e.getInstructionIndex()).setStage(InstructionStatus.Stage.COMMITTED);
+                    instructionStatuses.get(e.getInstructionIndex()).setCommitCycle(cycle);
+                    committedThisCycle.add(e.getInstructionIndex());
+                }
+            }
+        }
+        
+        // Second, handle stores that are ready to write back (completed execution)
         for (ReservationStationEntry e : stations.busyEntries()) {
             if (e.getOpcode() != null && e.getOpcode().isStore() && e.isResultReady()) {
                 // Perform the actual store operation
