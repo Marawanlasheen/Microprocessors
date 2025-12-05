@@ -49,7 +49,8 @@ public class InstructionParser {
                 String label = parts[3];
                 if (labelToLine.containsKey(label)) {
                     int target = labelToLine.get(label);
-                    int offset = target - i;
+                    // Offset is relative to the next instruction after the branch (i+1)
+                    int offset = target - (i + 1);
                     parts[3] = Integer.toString(offset);
                     normalized = String.join(" ", parts);
                 }
