@@ -15,12 +15,12 @@ public class StationState {
     public final Integer address;
     public final int remainingCycles;
     public final boolean resultReady;
-    public final Integer resultValue;
+    public final Long resultValue;
     public final String destRegister;
 
     public StationState(String name, ReservationStationType type, boolean busy, Opcode opcode, String vj, String vk,
                         String qj, String qk, Integer address, int remainingCycles, boolean resultReady,
-                        Integer resultValue, String destRegister) {
+                        Long resultValue, String destRegister) {
         this.name = name;
         this.type = type;
         this.busy = busy;

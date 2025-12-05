@@ -17,7 +17,7 @@ public class ReservationStationEntry {
     private Integer address; // for load/store effective address
     private int remainingCycles; // execution countdown
     private boolean resultReady;
-    private Integer resultValue; // simplified as integer
+    private Long resultValue; // simplified as integer
     private String destRegister; // track destination register (if any) for hazard resolution
     private String src1Register;
     private String src2Register;
@@ -54,8 +54,8 @@ public class ReservationStationEntry {
     public void setRemainingCycles(int remainingCycles) { this.remainingCycles = remainingCycles; }
     public boolean isResultReady() { return resultReady; }
     public void setResultReady(boolean resultReady) { this.resultReady = resultReady; }
-    public Integer getResultValue() { return resultValue; }
-    public void setResultValue(Integer resultValue) { this.resultValue = resultValue; }
+    public Long getResultValue() { return resultValue; }
+    public void setResultValue(Long resultValue) { this.resultValue = resultValue; }
     public String getDestRegister() { return destRegister; }
     public void setDestRegister(String destRegister) { this.destRegister = destRegister; }
     public String getSrc1Register() { return src1Register; }

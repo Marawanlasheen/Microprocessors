@@ -7,7 +7,7 @@ import java.util.Queue;
 public class CommonDataBus {
     private final Queue<CdbResult> pending = new LinkedList<>();
 
-    public void requestPublish(String tag, int value) {
+    public void requestPublish(String tag, long value) {
         pending.add(new CdbResult(tag, value));
     }
 
@@ -17,7 +17,7 @@ public class CommonDataBus {
 
     public static class CdbResult {
         public final String tag;
-        public final int value;
-        public CdbResult(String tag, int value) { this.tag = tag; this.value = value; }
+        public final long value;
+        public CdbResult(String tag, long value) { this.tag = tag; this.value = value; }
     }
 }

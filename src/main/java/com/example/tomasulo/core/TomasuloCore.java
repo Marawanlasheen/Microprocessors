@@ -138,8 +138,8 @@ public class TomasuloCore {
                 RegisterFile rf = base.startsWith("F") ? floatRegisters : intRegisters;
                 // Only check if base register is ready (not pending)
                 if (!rf.isPending(base)) {
-                    int baseValue = rf.getValue(base);
-                    int effectiveAddress = baseValue + offset;
+                    long baseValue = rf.getValue(base);
+                    int effectiveAddress = (int)(baseValue + offset);
                     
                     // Check all busy load/store stations AND recently committed ones for address clash
                     // Note: Load after Load to same address is NOT a clash
@@ -169,9 +169,9 @@ public class TomasuloCore {
                             }
                             // Also check if base is ready but address not computed yet
                             if (otherAddr == null && e.getQj() == null && e.getVj() != null) {
-                                int otherBase = Integer.parseInt(e.getVj());
+                                long otherBase = Long.parseLong(e.getVj());
                                 int otherOffset = e.getAddress() != null ? e.getAddress() : 0;
-                                int otherEffectiveAddr = otherBase + otherOffset;
+                                int otherEffectiveAddr = (int)(otherBase + otherOffset);
                                 if (otherEffectiveAddr == effectiveAddress) {
                                     // Skip if both are loads (no clash)
                                     if (currentIsLoad && otherIsLoad) {
@@ -261,7 +261,8 @@ public class TomasuloCore {
 
     private int latencyFor(Opcode opcode) {
         switch (opcode) {
-            case ADD, SUB, ADD_D, SUB_D, ADD_S, SUB_S, ADDI, SUBI, DADDI, DSUBI -> { return config.getLatencyConfig().getAddLatency(); }
+            case ADD, ADD_D, ADD_S, ADDI, DADDI -> { return config.getLatencyConfig().getAddLatency(); }
+            case SUB, SUB_D, SUB_S, SUBI, DSUBI -> { return config.getLatencyConfig().getSubLatency(); }
             case MUL, MUL_D, MUL_S -> { return config.getLatencyConfig().getMulLatency(); }
             case DIV, DIV_D, DIV_S -> { return config.getLatencyConfig().getDivLatency(); }
             case LW, LD, L_S, L_D -> { return config.getLatencyConfig().getLoadLatency(); }
@@ -432,8 +433,8 @@ public class TomasuloCore {
                 e.setCacheLatencyApplied(true);
             } else if (op.isStore() && !e.isCacheLatencyApplied()) {
                 // For stores, compute effective address and apply cache latency like loads
-                int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
-                int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
+                long base = (e.getVj() != null) ? Long.parseLong(e.getVj()) : 0;
+                int addr = (int)(base + (e.getAddress() == null ? 0 : e.getAddress()));
                 e.setEffectiveAddress(addr);
                 System.out.println("[EXECUTE] STORE " + e.getName() + " - Base: " + base + ", Offset: " + e.getAddress() + ", Effective Address: " + addr);
                 boolean hit = dataCache.isHit(addr);
@@ -511,12 +512,12 @@ public class TomasuloCore {
                 
                 if (op.isStore()) {
                     // Mark store as ready for write-back (will be performed in next cycle)
-                    e.setResultValue(0); // dummy value for stores
+                    e.setResultValue(0L); // dummy value for stores
                     e.setResultReady(true);
                     // Store will be performed in write-back phase, then station freed
                     continue;
                 }
-                int result = computeResult(e);
+                long result = computeResult(e);
                 e.setResultValue(result);
                 e.setResultReady(true);
                 if (op.isBranch()) {
@@ -543,12 +544,12 @@ public class TomasuloCore {
         }
     }
 
-    private int computeResult(ReservationStationEntry e) {
+    private long computeResult(ReservationStationEntry e) {
         Opcode op = e.getOpcode();
         // Resolve any pending operands (if tags cleared earlier). For now assume Vj/Vk hold integer strings.
-        int vj = 0; int vk = 0;
-        if (e.getVj() != null) vj = Integer.parseInt(e.getVj());
-        if (e.getVk() != null) vk = Integer.parseInt(e.getVk());
+        long vj = 0; long vk = 0;
+        if (e.getVj() != null) vj = Long.parseLong(e.getVj());
+        if (e.getVk() != null) vk = Long.parseLong(e.getVk());
         if (op == null) return 0;
         switch (op) {
             case ADD, ADD_D, ADD_S, DADDI -> { return vj + vk; }
@@ -565,26 +566,26 @@ public class TomasuloCore {
                 if (block == null) {
                     // Fallback: should not happen if execute phase worked correctly
                     System.out.println("[COMPUTE] WARNING: LoadedData is null! Fetching from cache (this shouldn't happen)");
-                    int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
-                    int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
+                    long base = (e.getVj() != null) ? Long.parseLong(e.getVj()) : 0;
+                    int addr = (int)(base + (e.getAddress() == null ? 0 : e.getAddress()));
                     System.out.println("[COMPUTE] Fallback address: " + addr);
                     block = dataCache.loadBlock(addr, memory);
                 } else {
                     System.out.println("[COMPUTE] Using cached block (size: " + block.length + " bytes) - no cache access needed");
                 }
                 
-                // Convert entire block to integer with REVERSED byte order
-                // For addresses 0-7: address 7 is LSB, address 0 is MSB
-                // This means we read bytes in reverse order
-                int result = 0;
-                for (int i = 0; i < block.length && i < 4; i++) {
-                    // Reverse: last byte (highest address) becomes LSB
-                    int byteIdx = block.length - 1 - i;
-                    int byteVal = Byte.toUnsignedInt(block[byteIdx]);
-                    result |= (byteVal << (i * 8));
+                // For L.D/LD (8-byte loads), read full 8 bytes; for LW/L.S (4-byte loads), read 4 bytes
+                boolean is8ByteLoad = (op == Opcode.L_D || op == Opcode.LD);
+                int bytesToRead = is8ByteLoad ? 8 : 4;
+                
+                long result = 0;
+                for (int i = 0; i < Math.min(block.length, bytesToRead); i++) {
+                    // Big-endian: first byte (lowest address) is MSB
+                    int byteVal = Byte.toUnsignedInt(block[i]);
+                    result = (result << 8) | byteVal;
                 }
                 
-                System.out.println("[COMPUTE] LOAD result from block (reversed byte order): " + result);
+                System.out.println("[COMPUTE] LOAD result from block (big-endian, " + bytesToRead + " bytes): " + result);
                 System.out.print("[COMPUTE] Block bytes (address order): ");
                 for (int i = 0; i < block.length; i++) {
                     System.out.print(String.format("%02X ", block[i] & 0xFF));
@@ -593,30 +594,37 @@ public class TomasuloCore {
                 return result;
             }
             case SW, SD, S_S, S_D -> {
-                int base = (e.getVj() != null) ? Integer.parseInt(e.getVj()) : 0;
-                int addr = base + (e.getAddress() == null ? 0 : e.getAddress());
-                int value = (e.getVk() != null) ? Integer.parseInt(e.getVk()) : 0;
+                long base = (e.getVj() != null) ? Long.parseLong(e.getVj()) : 0;
+                int addr = (int)(base + (e.getAddress() == null ? 0 : e.getAddress()));
+                long value = (e.getVk() != null) ? Long.parseLong(e.getVk()) : 0;
                 
-                // Store with REVERSED byte order - highest address gets LSB
-                // For addresses 0-7: address 7 = LSB, address 0 = MSB
-                int blockSize = config.getCacheConfig().getBlockSizeBytes();
-                byte[] data = new byte[Math.min(blockSize, 4)]; // Store up to 4 bytes or block size
+                // For S.D/SD (8-byte stores), write 8 bytes; for SW/S.S (4-byte stores), write 4 bytes
+                boolean is8ByteStore = (op == Opcode.S_D || op == Opcode.SD);
                 
-                // Reverse byte order when storing
-                for (int i = 0; i < data.length; i++) {
-                    // LSB goes to highest address (last position)
-                    int byteIdx = data.length - 1 - i;
-                    data[byteIdx] = (byte)((value >> (i * 8)) & 0xFF);
+                System.out.println("[COMPUTE] STORE - Address: " + addr + ", Value: " + value + ", Size: " + (is8ByteStore ? "8 bytes" : "4 bytes"));
+                
+                if (is8ByteStore) {
+                    // Store 8 bytes using big-endian
+                    memory.storeDoubleWord(addr, value);
+                    System.out.println("[COMPUTE] Stored 8 bytes (double word) to memory");
+                } else {
+                    // Store 4 bytes using big-endian
+                    int blockSize = config.getCacheConfig().getBlockSizeBytes();
+                    byte[] data = new byte[Math.min(blockSize, 4)];
+                    
+                    // Big-endian: MSB at lowest address
+                    for (int i = 0; i < data.length; i++) {
+                        data[i] = (byte)((value >> ((data.length - 1 - i) * 8)) & 0xFF);
+                    }
+                    
+                    System.out.print("[COMPUTE] Storing bytes (big-endian): ");
+                    for (int i = 0; i < data.length; i++) {
+                        System.out.print(String.format("%02X ", data[i] & 0xFF));
+                    }
+                    System.out.println();
+                    
+                    dataCache.storeWord(addr, data, memory);
                 }
-                
-                System.out.println("[COMPUTE] STORE - Address: " + addr + ", Value: " + value);
-                System.out.print("[COMPUTE] Storing bytes (reversed order): ");
-                for (int i = 0; i < data.length; i++) {
-                    System.out.print(String.format("%02X ", data[i] & 0xFF));
-                }
-                System.out.println();
-                
-                dataCache.storeWord(addr, data, memory);
                 return 0; // stores do not publish meaningful value
             }
             case BEQ -> { return (vj == vk) ? 1 : 0; }

@@ -24,8 +24,8 @@ import java.util.*;
 
 public class App extends Application {
     // User-provided register initialization
-            private Map<String, Integer> userIntRegInit = new HashMap<>();
-            private Map<String, Integer> userFloatRegInit = new HashMap<>();
+            private Map<String, Long> userIntRegInit = new HashMap<>();
+            private Map<String, Long> userFloatRegInit = new HashMap<>();
     // User-configurable station/buffer sizes
     private int userFpAddStations = 3;
     private int userFpMulStations = 2;
@@ -92,7 +92,8 @@ private int userLoadLatency = 2;
         userBranchLatency = getUserInt("BRANCH Latency (cycles)", 1);
         userStoreLatency = getUserInt("STORE Latency (cycles)", 1);
         System.out.println("[CONFIG] Instruction Latencies:");
-        System.out.println("[CONFIG]   ADD/SUB: " + userAddLatency + " cycles");
+        System.out.println("[CONFIG]   ADD: " + userAddLatency + " cycles");
+        System.out.println("[CONFIG]   SUB: " + userSubLatency + " cycles");
         System.out.println("[CONFIG]   MUL: " + userMulLatency + " cycles");
         System.out.println("[CONFIG]   DIV: " + userDivLatency + " cycles");
         System.out.println("[CONFIG]   LOAD: " + userLoadLatency + " cycles");
@@ -208,15 +209,13 @@ private int userLoadLatency = 2;
         
         // Preload memory with test values at addresses accessed by test program
         com.example.tomasulo.memory.Memory memory = core.getMemory();
-        memory.initWord(100, 1800000);  // Memory[100] = 1800000 (writes bytes at 100-103: 00 1B 77 40 in big-endian)
-        memory.initWord(104, 5);   // Memory[104] = 5 (writes bytes at 104-107: 00 00 00 05 in big-endian)
-        memory.initWord(120, 25);  // Memory[120] for L.D F2, 20(R2) where R2=100
+        memory.initDoubleWord(0, 2L);  // 8 bytes at address 100-107 (big-endian)
+        memory.initDoubleWord(8, 5L);  // Memory[120] = 25 (4 bytes at 120-123)
         System.out.println("[CONFIG] Memory Preloaded:");
-        System.out.println("[CONFIG]   Address 100: " + memory.loadWordRaw(100));
-        System.out.println("[CONFIG]   Address 104: " + memory.loadWordRaw(104));
-        System.out.println("[CONFIG]   Address 120: " + memory.loadWordRaw(120));
+        System.out.println("[CONFIG]   Address 100 (8 bytes): " + memory.loadDoubleWordRaw(100));
+        System.out.println("[CONFIG]   Address 120 (4 bytes): " + memory.loadWordRaw(120));
         System.out.println("[CONFIG] With these values, your test program should compute:");
-        System.out.println("[CONFIG]   F6 = 10 (from address 100)");
+        System.out.println("[CONFIG]   F6 = 123456789012345 (from address 100, 8-byte load with L.D)");
         System.out.println("[CONFIG]   F2 = 25 (from address 120)");
         System.out.println("[CONFIG]   F7 = F1 + F3 = 2 + 3 = 5");
         System.out.println("[CONFIG]   F0 = F2 * F4 = 25 * 5 = 125");
@@ -273,7 +272,7 @@ private int userLoadLatency = 2;
         TableColumn<RegRow, String> cName = new TableColumn<>("Reg");
         cName.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().name));
         TableColumn<RegRow, Number> cVal = new TableColumn<>("Value");
-        cVal.setCellValueFactory(cd -> new SimpleIntegerProperty(cd.getValue().value));
+        cVal.setCellValueFactory(cd -> new javafx.beans.property.SimpleLongProperty(cd.getValue().value));
         TableColumn<RegRow, String> cTag = new TableColumn<>("Tag");
         cTag.setCellValueFactory(cd -> new SimpleStringProperty(cd.getValue().tag));
         tv.getColumns().add(cName);
@@ -361,11 +360,11 @@ private int userLoadLatency = 2;
 
     public static class RegRow {
         public final String name;
-        public final int value;
+        public final long value;
         public final String tag;
-        public RegRow(String name, Integer value, String tag) {
+        public RegRow(String name, Long value, String tag) {
             this.name = name;
-            this.value = value == null ? 0 : value;
+            this.value = value == null ? 0L : value;
             this.tag = tag;
         }
     }
@@ -503,7 +502,7 @@ private int userLoadLatency = 2;
                 if (parts.length != 2) continue;
                 String reg = parts[0].trim().toUpperCase();
                 try {
-                    int val = Integer.parseInt(parts[1].trim());
+                    long val = Long.parseLong(parts[1].trim());
                     // R0 is hardwired to 0 and cannot be initialized
                     if (reg.equals("R0")) {
                         System.out.println("[CONFIG] Warning: R0 is hardwired to 0 and cannot be changed. Ignoring initialization.");
