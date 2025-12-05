@@ -604,9 +604,24 @@ public class TomasuloCore {
                 System.out.println("[COMPUTE] STORE - Address: " + addr + ", Value: " + value + ", Size: " + (is8ByteStore ? "8 bytes" : "4 bytes"));
                 
                 if (is8ByteStore) {
-                    // Store 8 bytes using big-endian
-                    memory.storeDoubleWord(addr, value);
-                    System.out.println("[COMPUTE] Stored 8 bytes (double word) to memory");
+                    // Store 8 bytes using big-endian (write-through: update both cache and memory)
+                    int blockSize = config.getCacheConfig().getBlockSizeBytes();
+                    byte[] data = new byte[Math.min(blockSize, 8)];
+                    
+                    // Big-endian: MSB at lowest address
+                    for (int i = 0; i < data.length; i++) {
+                        data[i] = (byte)((value >> ((data.length - 1 - i) * 8)) & 0xFF);
+                    }
+                    
+                    System.out.print("[COMPUTE] Storing 8 bytes (big-endian): ");
+                    for (int i = 0; i < data.length; i++) {
+                        System.out.print(String.format("%02X ", data[i] & 0xFF));
+                    }
+                    System.out.println();
+                    
+                    // Update cache (write-through) and memory
+                    dataCache.storeDoubleWord(addr, data, memory);
+                    System.out.println("[COMPUTE] Stored 8 bytes (double word) to cache and memory");
                 } else {
                     // Store 4 bytes using big-endian
                     int blockSize = config.getCacheConfig().getBlockSizeBytes();

@@ -102,6 +102,42 @@ public class DataCache {
     }
     
     /**
+     * Store an 8-byte double word to cache and memory (write-through).
+     * Similar to storeWord but handles 8 bytes instead of 4.
+     */
+    public void storeDoubleWord(int address, byte[] data, Memory memory) {
+        // Use the effective address as the block starting address
+        int blockAddress = address;
+        if (!blocks.containsKey(blockAddress)) {
+            byte[] fetched = memory.fetchBlock(blockAddress, config.getBlockSizeBytes());
+            blocks.put(blockAddress, fetched);
+        }
+        byte[] block = blocks.get(blockAddress);
+        
+        // Check if the 8-byte double word fits in the fetched block
+        if (config.getBlockSizeBytes() >= 8) {
+            // Double word fits entirely in the fetched block
+            System.arraycopy(data, 0, block, 0, Math.min(data.length, 8));
+            // Write to memory using the proper method
+            long value = 0;
+            for (int i = 0; i < Math.min(data.length, 8); i++) {
+                value = (value << 8) | Byte.toUnsignedInt(data[i]);
+            }
+            memory.storeDoubleWord(blockAddress, value);
+        } else {
+            // Block is smaller than 8 bytes - write what fits
+            int bytesAvailable = Math.min(config.getBlockSizeBytes(), Math.min(data.length, 8));
+            System.arraycopy(data, 0, block, 0, bytesAvailable);
+            // Convert to long and write to memory
+            long value = 0;
+            for (int i = 0; i < bytesAvailable; i++) {
+                value = (value << 8) | Byte.toUnsignedInt(data[i]);
+            }
+            memory.storeDoubleWord(blockAddress, value);
+        }
+    }
+    
+    /**
      * Load the entire cache block starting from the given address.
      * This returns the full block data (not just 4 bytes).
      * @param address Starting address of the block
